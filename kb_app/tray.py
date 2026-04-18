@@ -38,9 +38,9 @@ class TrayRuntime:
         self.actions: queue.Queue[str] = queue.Queue()
         self.capture_window: Toplevel | None = None
         self.icon = pystray.Icon(
-            "recall",
+            "mykb",
             self._build_icon(),
-            "Recall",
+            "MyKB",
             menu=pystray.Menu(
                 pystray.MenuItem("Open Dashboard", lambda *_args: self.enqueue("dashboard")),
                 pystray.MenuItem("Quick Capture", lambda *_args: self.enqueue("capture")),
@@ -83,7 +83,7 @@ class TrayRuntime:
             return
 
         window = Toplevel(self.root)
-        window.title("Recall Quick Capture")
+        window.title("MyKB Quick Capture")
         window.geometry("560x360")
         window.attributes("-topmost", True)
 

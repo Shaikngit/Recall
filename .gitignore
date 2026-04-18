@@ -1,9 +1,15 @@
 .venv/
 __pycache__/
 *.pyc
-.recall/
+.mykb/
 .vscode/
 *-logs-*.zip
 .public-export/
 infra/main.json
+app-recall-logs/
+app-recall-logs-*/
+app-recall-logs.zip
+deployzip/
+.azure/manual-web/
+.azure/manual-web.zip
 

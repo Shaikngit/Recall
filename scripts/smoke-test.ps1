@@ -9,7 +9,7 @@ $base = $BaseUrl.TrimEnd('/')
 $marker = "SMOKE-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 $captureNote = @"
 Smoke test note for $marker
-Service: Recall
+Service: MyKB
 Learning: smoke validation path
 "@
 
@@ -36,8 +36,8 @@ if ($health.status -ne 'ok') {
 }
 
 $recent = Invoke-RestMethod -Uri "$base/api/recent"
-if (-not $recent) {
-    throw "Recent endpoint returned no data."
+if ($null -eq $recent) {
+    throw "Recent endpoint returned null."
 }
 
 $capture = Invoke-JsonPost -Url "$base/api/capture" -Payload @{ note = $captureNote }
@@ -60,7 +60,7 @@ if (-not $firstResult.path -or $firstResult.path -notlike "*$($capture.savedTo)"
 
 Write-Host "Root: OK" -ForegroundColor Green
 Write-Host "Health: OK" -ForegroundColor Green
-Write-Host "Recent: OK" -ForegroundColor Green
+Write-Host "Recent: OK ($($recent.Count) item(s))" -ForegroundColor Green
 Write-Host "Capture: $($capture.savedTo)" -ForegroundColor Green
 Write-Host "Ask: OK" -ForegroundColor Green
 Write-Host "Top source: $($firstResult.path)" -ForegroundColor Green

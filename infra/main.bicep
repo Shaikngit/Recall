@@ -46,7 +46,7 @@ param openAINewAccountName string = ''
 param assignOpenAIRole bool = true
 
 @description('Linux path under /home used for persistent knowledge storage in App Service.')
-param contentMountPath string = '/home/recall-content'
+param contentMountPath string = '/home/mykb-content'
 
 var normalizedEnvironmentName = toLower(replace(environmentName, '-', ''))
 var uniqueSuffix = take(uniqueString(subscription().subscriptionId, resourceGroup().id, environmentName), 6)

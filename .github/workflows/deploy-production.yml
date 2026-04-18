@@ -1,0 +1,60 @@
+name: Deploy Production App Service
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build deployment package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repoRoot = Get-Location
+          $stagingPath = Join-Path $repoRoot '.azure/manual-web'
+          $zipPath = Join-Path $repoRoot '.azure/manual-web.zip'
+          $excludedTopLevel = @('.git', '.azure', '.github', '.vscode', '.venv', '.mykb', '__pycache__')
+
+          if (Test-Path $stagingPath) {
+              Remove-Item -Path $stagingPath -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Path $stagingPath -Force | Out-Null
+
+          Get-ChildItem -Path $repoRoot -Force |
+              Where-Object { $excludedTopLevel -notcontains $_.Name -and $_.Extension -ne '.zip' } |
+              ForEach-Object {
+                  Copy-Item $_.FullName -Destination $stagingPath -Recurse -Force
+              }
+
+          Get-ChildItem -Path $stagingPath -Recurse -Directory -Force |
+              Where-Object { $_.Name -eq '__pycache__' } |
+              Remove-Item -Recurse -Force
+
+          Get-ChildItem -Path $stagingPath -Recurse -Include *.pyc | Remove-Item -Force
+
+          if (Test-Path $zipPath) {
+              Remove-Item -Path $zipPath -Force
+          }
+
+          Compress-Archive -Path (Join-Path $stagingPath '*') -DestinationPath $zipPath -Force
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: app-mykbshaikn-th6h7z
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISH_PROFILE }}
+          package: .azure/manual-web.zip

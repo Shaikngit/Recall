@@ -3,7 +3,7 @@
 .github/
 .vscode/
 .venv/
-.recall/
+.mykb/
 __pycache__/
 *.pyc
 *.zip

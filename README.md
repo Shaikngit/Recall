@@ -24,6 +24,14 @@ From the repo root:
 
 That export keeps only the product files needed for the public repo and omits private knowledge folders. The detailed cutover note is in [docs/public-cutover.md](docs/public-cutover.md).
 
+## Source Of Truth
+
+Treat the public repo as the product repository that downstream users clone and deploy.
+
+- Make product changes in the public repo and push them there.
+- Use the public repo as the only deployment source for the production website.
+- Do not keep a parallel app-development workflow in the private repo once you have moved to the public repo.
+
 ## Local Run
 
 From the repository root in PowerShell:
@@ -61,6 +69,7 @@ Key behavior:
 - Fresh hosted deployments start empty
 - The app no longer imports packaged markdown folders into hosted storage
 - Azure OpenAI is the first-class infrastructure path for deployment
+- The default hosted content root is `/home/mykb-content` to stay compatible with older MyKB App Service deployments
 
 ### Deployment Modes
 
@@ -124,6 +133,26 @@ There is also a local deployment helper:
 ```
 
 Pass `-BaseUrl` if you want the script to run the post-deploy health check and smoke test.
+
+### Deploy To An Existing App Service
+
+If you already have an App Service that was created from an earlier private repo, use the code-only deploy script instead of reprovisioning infrastructure. This preserves the existing app settings, Azure OpenAI wiring, and hosted content root.
+
+```powershell
+.\scripts\deploy-existing-appservice.ps1 -ResourceGroup <resource-group> -AppName <app-name> -BaseUrl https://<your-app>.azurewebsites.net
+```
+
+This path is the safest way to move day-to-day product development to the public repo while keeping an older production website stable.
+
+### GitHub Push Deploy
+
+The public repo also includes a GitHub Actions workflow for deploying to the existing production App Service on pushes to `main` or by manual dispatch.
+
+Before using it, add this repository secret in GitHub:
+
+- `AZUREAPPSERVICE_PUBLISH_PROFILE`: publish profile for `app-mykbshaikn-th6h7z`
+
+After that, pushing to `main` in the public repo can deploy the app automatically.
 
 ## Smoke Test
 
