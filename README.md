@@ -150,9 +150,9 @@ The public repo also includes a GitHub Actions workflow for deploying to the exi
 
 Before using it, add this repository secret in GitHub:
 
-- `AZUREAPPSERVICE_KUDU_URL`: `https://app-mykbshaikn-th6h7z.scm.azurewebsites.net`
-- `AZUREAPPSERVICE_KUDU_USERNAME`: ZipDeploy publishing username for `app-mykbshaikn-th6h7z`
-- `AZUREAPPSERVICE_KUDU_PASSWORD`: ZipDeploy publishing password for `app-mykbshaikn-th6h7z`
+- `AZURE_CLIENT_ID`: Entra app registration client ID for the GitHub Actions deploy identity
+- `AZURE_TENANT_ID`: `16b3c013-d300-468d-ac64-7eda0820b6d3`
+- `AZURE_SUBSCRIPTION_ID`: `58400668-ed03-47a3-a7f8-fb03677bdffb`
 
 After that, pushing to `main` in the public repo can deploy the app automatically.
 
