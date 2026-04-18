@@ -52,9 +52,48 @@ jobs:
 
           Compress-Archive -Path (Join-Path $stagingPath '*') -DestinationPath $zipPath -Force
 
-      - name: Deploy to Azure App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: app-mykbshaikn-th6h7z
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISH_PROFILE }}
-          package: .azure/manual-web.zip
+    - name: Deploy to Azure App Service
+    shell: pwsh
+    env:
+      AZUREAPPSERVICE_KUDU_URL: ${{ secrets.AZUREAPPSERVICE_KUDU_URL }}
+      AZUREAPPSERVICE_KUDU_USERNAME: ${{ secrets.AZUREAPPSERVICE_KUDU_USERNAME }}
+      AZUREAPPSERVICE_KUDU_PASSWORD: ${{ secrets.AZUREAPPSERVICE_KUDU_PASSWORD }}
+    run: |
+      $ErrorActionPreference = 'Stop'
+      $publishUrl = $env:AZUREAPPSERVICE_KUDU_URL
+      if (-not $publishUrl) {
+        throw 'Missing AZUREAPPSERVICE_KUDU_URL secret.'
+      }
+
+      if ($publishUrl -notmatch '^https?://') {
+        $publishUrl = "https://$publishUrl"
+      }
+
+      $publishUrl = $publishUrl.TrimEnd('/')
+      $deployUrl = "$publishUrl/api/zipdeploy?isAsync=true"
+      $credentialPair = '{0}:{1}' -f $env:AZUREAPPSERVICE_KUDU_USERNAME, $env:AZUREAPPSERVICE_KUDU_PASSWORD
+      $encodedCredential = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($credentialPair))
+      $headers = @{ Authorization = "Basic $encodedCredential" }
+      $packagePath = Join-Path (Get-Location) '.azure/manual-web.zip'
+
+      $deployResponse = Invoke-WebRequest -Uri $deployUrl -Method Post -Headers $headers -InFile $packagePath -ContentType 'application/zip'
+      $statusUrl = $deployResponse.Headers.Location
+      if (-not $statusUrl) {
+        throw 'ZipDeploy did not return a deployment status URL.'
+      }
+
+      for ($attempt = 0; $attempt -lt 120; $attempt++) {
+        $statusResponse = Invoke-RestMethod -Uri $statusUrl -Headers $headers -Method Get
+        if ($statusResponse.status -eq 4) {
+          Write-Host 'ZipDeploy completed successfully.'
+          exit 0
+        }
+
+        if ($statusResponse.status -eq 3) {
+          throw "ZipDeploy failed: $($statusResponse.status_text)"
+        }
+
+        Start-Sleep -Seconds 5
+      }
+
+      throw 'ZipDeploy timed out waiting for completion.'

@@ -150,7 +150,9 @@ The public repo also includes a GitHub Actions workflow for deploying to the exi
 
 Before using it, add this repository secret in GitHub:
 
-- `AZUREAPPSERVICE_PUBLISH_PROFILE`: publish profile for `app-mykbshaikn-th6h7z`
+- `AZUREAPPSERVICE_KUDU_URL`: `https://app-mykbshaikn-th6h7z.scm.azurewebsites.net`
+- `AZUREAPPSERVICE_KUDU_USERNAME`: ZipDeploy publishing username for `app-mykbshaikn-th6h7z`
+- `AZUREAPPSERVICE_KUDU_PASSWORD`: ZipDeploy publishing password for `app-mykbshaikn-th6h7z`
 
 After that, pushing to `main` in the public repo can deploy the app automatically.
 
