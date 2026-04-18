@@ -1,0 +1,9 @@
+.git/
+.azure/
+.github/
+.vscode/
+.venv/
+.mykb/
+__pycache__/
+*.pyc
+*.zip

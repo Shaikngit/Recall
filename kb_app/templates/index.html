@@ -1,0 +1,1573 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MyKB Console</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <main class="app-shell">
+        <header class="topbar minimal-topbar">
+            <div class="brand-strip">
+                <span class="brand-mark"></span>
+                <div>
+                    <strong>Recall</strong>
+                </div>
+            </div>
+            <div class="topbar-actions compact-actions">
+                <button id="settings-panel-toggle" class="icon-button" type="button" aria-label="Open AI settings" title="Settings">
+                    <svg class="icon-svg icon-settings" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M19.14 12.94c.04-.31.06-.62.06-.94s-.02-.63-.06-.94l1.78-1.39a.5.5 0 0 0 .12-.64l-1.68-2.91a.5.5 0 0 0-.6-.22l-2.1.84a7.4 7.4 0 0 0-1.62-.94l-.32-2.23A.5.5 0 0 0 14.24 3h-3.36a.5.5 0 0 0-.49.42l-.32 2.23c-.57.23-1.12.54-1.62.94l-2.1-.84a.5.5 0 0 0-.6.22L4.07 8.88a.5.5 0 0 0 .12.64l1.78 1.39c-.04.31-.06.62-.06.94s.02.63.06.94l-1.78 1.39a.5.5 0 0 0-.12.64l1.68 2.91a.5.5 0 0 0 .6.22l2.1-.84c.5.4 1.05.71 1.62.94l.32 2.23a.5.5 0 0 0 .49.42h3.36a.5.5 0 0 0 .49-.42l.32-2.23c.57-.23 1.12-.54 1.62-.94l2.1.84a.5.5 0 0 0 .6-.22l1.68-2.91a.5.5 0 0 0-.12-.64l-1.78-1.39ZM12 15.25A3.25 3.25 0 1 1 12 8.75a3.25 3.25 0 0 1 0 6.5Z" fill="currentColor"></path>
+                    </svg>
+                </button>
+                <button id="quick-capture-toggle" class="icon-button" type="button" aria-label="Create a capture note" title="Capture">
+                    <span class="icon-pencil" aria-hidden="true"></span>
+                </button>
+                <button id="new-chat-button" class="icon-button primary-icon-button" type="button" aria-label="Start a new chat" title="New Chat">
+                    <span class="icon-plus" aria-hidden="true"></span>
+                </button>
+            </div>
+        </header>
+
+        <section id="chat-stage" class="chat-stage empty-mode">
+            <div id="empty-state" class="empty-state hidden"></div>
+
+            <section id="ai-onboarding-banner" class="surface utility-surface floating-panel-card{% if status.aiEnabled %} hidden{% endif %}">
+                <div class="surface-header compact-header">
+                    <div>
+                        <p class="surface-kicker">Required Setup</p>
+                        <h2>Connect AI Before Recall</h2>
+                    </div>
+                    <button id="open-settings-onboarding" class="utility-button" type="button">Open Settings</button>
+                </div>
+                <p class="utility-status">This reusable deployment starts with an empty knowledge base. Configure Azure OpenAI or another supported provider before asking questions.</p>
+            </section>
+
+            <section id="conversation-shell" class="conversation-shell hidden" aria-live="polite">
+                <div id="conversation" class="conversation-thread">
+                    <article class="chat-message assistant intro-message">
+                        <div class="avatar assistant-avatar">AI</div>
+                        <div class="message-stack">
+                            <div class="message-bubble assistant-bubble empty">{% if status.aiEnabled %}Ask a question and I will answer from your notes.{% else %}Open Settings, connect AI, and then start asking questions about your notes.{% endif %}</div>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="composer-area">
+                <div id="composer-shell" class="composer-shell compact-composer-shell">
+                    <label class="sr-only" for="ask-input">Ask My KB</label>
+                    <div class="input-shell">
+                        <textarea id="ask-input" class="chat-input minimal-input" placeholder="Ask anything"></textarea>
+                        <label id="follow-up-toggle-wrap" class="composer-toggle hidden" for="continue-chat-toggle" title="Checked means this is a follow-up to the current chat. Unchecked means start fresh.">
+                            <input id="continue-chat-toggle" type="checkbox">
+                            <span>Follow-up</span>
+                        </label>
+                        <button id="ask-button" class="send-button hidden" type="button">Send</button>
+                    </div>
+                    <div class="chat-composer-footer minimal-footer">
+                        <div class="composer-footer-left">
+                            <span id="ask-status" class="status-text">{% if status.aiEnabled %}Tip: use a hashtag like #incident or #sql to search one specific topic.{% else %}AI is required for recall. Open Settings to connect a provider first.{% endif %}</span>
+                        </div>
+                        <div class="composer-footer-right homepage-credit-wrap">
+                            <span class="homepage-credit">
+                                <span class="homepage-credit-label">Crafted with</span>
+                                <span class="homepage-credit-brand">GitHubCopilot</span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <div id="inbox-panel" class="floating-panel hidden" aria-hidden="true">
+        <article class="surface utility-surface floating-panel-card">
+            <div class="surface-header compact-header">
+                <div>
+                    <p class="surface-kicker">Backfill</p>
+                    <h2>Inbox Fallback</h2>
+                </div>
+                <button id="inbox-panel-close" class="inline-action-button" type="button">Close</button>
+            </div>
+            <p class="utility-status">New captures auto-organize immediately when the topic is clear. Use this only to backfill older or ambiguous inbox notes.</p>
+            <button id="organize-button" class="utility-button secondary-button" type="button">Run Inbox Backfill</button>
+            <p id="organize-status" class="utility-status"></p>
+            <div id="organize-results" class="result-list compact-list"></div>
+        </article>
+    </div>
+
+    <div id="settings-panel" class="floating-panel hidden" aria-hidden="true">
+        <article class="surface utility-surface floating-panel-card settings-surface">
+            <div class="surface-header compact-header">
+                <div>
+                    <p class="surface-kicker">Model</p>
+                    <h2>AI Settings</h2>
+                </div>
+                <button id="settings-panel-close" class="inline-action-button" type="button">Close</button>
+            </div>
+            <div class="settings-form">
+                <label class="settings-field">
+                    <span>Provider</span>
+                    <select id="model-provider" class="settings-input">
+                        <option value="">Select provider</option>
+                        <option value="openai" {% if model_settings.provider == 'openai' %}selected{% endif %}>OpenAI-compatible</option>
+                        <option value="azure-openai" {% if model_settings.provider == 'azure-openai' %}selected{% endif %}>Azure OpenAI</option>
+                        <option value="github-models" {% if model_settings.provider == 'github-models' %}selected{% endif %}>GitHub Models</option>
+                    </select>
+                </label>
+
+                <label class="settings-field">
+                    <span>Model</span>
+                    <input id="model-name" class="settings-input" type="text" value="{{ model_settings.model }}" placeholder="Model or Azure deployment name">
+                </label>
+
+                <label class="settings-field">
+                    <span>Base URL</span>
+                    <input id="model-base-url" class="settings-input" type="text" value="{{ model_settings.baseUrl }}" placeholder="https://resource.openai.azure.com/ or /openai/v1 endpoint">
+                </label>
+
+                <label class="settings-field">
+                    <span>API Key</span>
+                    <input id="model-api-key" class="settings-input" type="password" placeholder="Leave blank to keep the saved key">
+                </label>
+
+                <div class="settings-actions">
+                    <button id="test-model-button" class="utility-button secondary-button" type="button">Test Connection</button>
+                    <button id="save-model-button" class="utility-button" type="button">Save Settings</button>
+                </div>
+                <p id="model-settings-status" class="utility-status"></p>
+            </div>
+
+            <section class="content-library-section">
+                <div class="surface-header compact-header">
+                    <div>
+                        <p class="surface-kicker">Deployment</p>
+                        <h2>Public Template Notes</h2>
+                    </div>
+                </div>
+                <p class="utility-status">The public repo does not ship starter notes. New hosted deployments begin with an empty knowledge base and write notes into the live content root.</p>
+                <p id="content-library-status" class="utility-status"></p>
+                <div id="content-library-results" class="content-library-results"></div>
+            </section>
+        </article>
+    </div>
+
+    <div id="capture-modal" class="modal-shell hidden" aria-hidden="true">
+        <div class="modal-card">
+            <div class="capture-minimal-header">
+                <button id="capture-close-button" class="inline-action-button" type="button">Close</button>
+            </div>
+            <div class="capture-mode-switch" role="group" aria-label="Capture mode">
+                <button id="capture-mode-quick" class="capture-mode-button active" type="button" data-mode="quick">Quick line</button>
+                <button id="capture-mode-detailed" class="capture-mode-button" type="button" data-mode="detailed">Detailed note</button>
+            </div>
+            <div id="capture-quick-shell" class="capture-quick-shell">
+                <label class="sr-only" for="capture-quick-input">Quick capture line</label>
+                <div class="capture-quick-row">
+                    <input id="capture-quick-input" class="capture-quick-input" type="text" placeholder="">
+                </div>
+                <div id="capture-quick-feedback-row" class="capture-quick-feedback-row hidden" aria-live="polite">
+                    <span id="capture-quick-status" class="capture-quick-status"></span>
+                </div>
+            </div>
+            <div id="capture-toolbar" class="capture-toolbar hidden">
+                <div class="capture-template-group" role="group" aria-label="Capture templates">
+                    <button class="capture-template-chip" type="button" data-template="incident">Incident</button>
+                    <button class="capture-template-chip" type="button" data-template="learning">Learning</button>
+                    <button class="capture-template-chip" type="button" data-template="case">Case</button>
+                    <button class="capture-template-chip" type="button" data-template="meeting">Meeting</button>
+                </div>
+                <div class="capture-draft-row">
+                    <span id="capture-draft-status" class="capture-draft-status">Draft not started</span>
+                    <button id="capture-clear-draft" class="inline-action-button hidden" type="button">Clear Draft</button>
+                </div>
+            </div>
+            <div id="capture-suggestion-panel" class="capture-suggestion-panel hidden">
+                <div>
+                    <p class="capture-suggestion-label">Suggested title</p>
+                    <p id="capture-title-suggestion" class="capture-title-suggestion">Start typing and I will suggest a searchable title.</p>
+                </div>
+                <button id="capture-use-suggested-title" class="inline-action-button hidden" type="button">Use Suggestion</button>
+            </div>
+            <label id="capture-input-label" class="sr-only hidden" for="capture-input">Quick capture</label>
+            <textarea id="capture-input" class="chat-input capture-input hidden" placeholder=""></textarea>
+            <div id="capture-helper-row" class="capture-helper-row hidden">
+                <p class="capture-helper-copy">Tip: add a hashtag like <strong>#incident</strong> or <strong>#new-learning</strong>, then paste one screenshot if needed.</p>
+                <span id="capture-metrics" class="capture-metrics">0 lines · 0 chars</span>
+            </div>
+            <div id="capture-footer" class="chat-composer-footer modal-footer hidden">
+                <div class="composer-footer-left">
+                    <span id="capture-status" class="status-text"></span>
+                </div>
+                <div class="composer-footer-right">
+                    <button id="capture-button" class="utility-button hidden" type="button">Save Capture</button>
+                </div>
+            </div>
+            <div id="capture-meta" class="composer-meta hidden"></div>
+            <div id="capture-clarification" class="surface utility-surface hidden">
+                <div class="surface-header compact-header">
+                    <div>
+                        <p class="surface-kicker">Clarify</p>
+                        <h2>Finish This Note Now</h2>
+                    </div>
+                </div>
+                <p id="capture-clarification-text" class="utility-status">I saved the note, but I need one more input before I can create the KB note.</p>
+                <div class="settings-form">
+                    <label class="settings-field">
+                        <span>Destination</span>
+                        <select id="capture-destination" class="settings-input">
+                            <option value="">Choose a KB folder</option>
+                        </select>
+                    </label>
+                    <label class="settings-field">
+                        <span>Title</span>
+                        <input id="capture-title" class="settings-input" type="text" placeholder="Optional title override">
+                    </label>
+                    <div class="settings-actions">
+                        <button id="capture-keep-inbox" class="utility-button secondary-button" type="button">Keep In Inbox</button>
+                        <button id="capture-resolve-button" class="utility-button" type="button">Create KB Note</button>
+                    </div>
+                </div>
+            </div>
+            <div id="capture-recent-panel" class="capture-recent-panel hidden">
+                <div class="surface-header compact-header capture-recent-header">
+                    <div>
+                        <p class="surface-kicker">Recent</p>
+                        <h2>Reopen A Recent Note</h2>
+                    </div>
+                    <button id="capture-refresh-recent" class="inline-action-button" type="button">Refresh</button>
+                </div>
+                <div id="capture-recent-list" class="capture-recent-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="note-modal" class="modal-shell hidden" aria-hidden="true">
+        <div class="modal-card note-modal-card">
+            <div class="surface-header compact-header">
+                <div>
+                    <p class="surface-kicker">Source Note</p>
+                    <h2 id="note-modal-title">Note</h2>
+                    <p id="note-modal-path" class="recent-path"></p>
+                </div>
+                <button id="note-close-button" class="inline-action-button" type="button">Close</button>
+            </div>
+            <pre id="note-modal-content" class="note-content"></pre>
+        </div>
+    </div>
+
+    <div id="app-toast" class="app-toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <script>
+        async function postJson(url, payload) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || data.message || 'Request failed.');
+            }
+            return data;
+        }
+
+        async function postForm(url, formData) {
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || data.message || 'Request failed.');
+            }
+            return data;
+        }
+
+        const appStatus = {{ status | tojson }};
+        const chatStage = document.getElementById('chat-stage');
+        const emptyState = document.getElementById('empty-state');
+        const onboardingBanner = document.getElementById('ai-onboarding-banner');
+        const onboardingOpenSettings = document.getElementById('open-settings-onboarding');
+        const conversationShell = document.getElementById('conversation-shell');
+        const composerShell = document.getElementById('composer-shell');
+        const askInput = document.getElementById('ask-input');
+        const askButton = document.getElementById('ask-button');
+        const askStatus = document.getElementById('ask-status');
+        const followUpToggleWrap = document.getElementById('follow-up-toggle-wrap');
+        const conversation = document.getElementById('conversation');
+        const continueChatToggle = document.getElementById('continue-chat-toggle');
+        const newChatButton = document.getElementById('new-chat-button');
+        const inboxPanelToggle = document.getElementById('inbox-panel-toggle');
+        const settingsPanelToggle = document.getElementById('settings-panel-toggle');
+        const quickCaptureToggle = document.getElementById('quick-capture-toggle');
+        const inboxPanel = document.getElementById('inbox-panel');
+        const inboxPanelClose = document.getElementById('inbox-panel-close');
+        const settingsPanel = document.getElementById('settings-panel');
+        const settingsPanelClose = document.getElementById('settings-panel-close');
+        const captureModal = document.getElementById('capture-modal');
+        const captureCloseButton = document.getElementById('capture-close-button');
+        const captureModeQuickButton = document.getElementById('capture-mode-quick');
+        const captureModeDetailedButton = document.getElementById('capture-mode-detailed');
+        const captureQuickShell = document.getElementById('capture-quick-shell');
+        const captureQuickInput = document.getElementById('capture-quick-input');
+        const captureQuickFeedbackRow = document.getElementById('capture-quick-feedback-row');
+        const captureQuickStatus = document.getElementById('capture-quick-status');
+        const captureToolbar = document.getElementById('capture-toolbar');
+        const captureSuggestionPanel = document.getElementById('capture-suggestion-panel');
+        const captureInputLabel = document.getElementById('capture-input-label');
+        const captureInput = document.getElementById('capture-input');
+        const captureHelperRow = document.getElementById('capture-helper-row');
+        const captureFooter = document.getElementById('capture-footer');
+        const captureButton = document.getElementById('capture-button');
+        const captureStatus = document.getElementById('capture-status');
+        const captureMeta = document.getElementById('capture-meta');
+        const captureClarification = document.getElementById('capture-clarification');
+        const captureClarificationText = document.getElementById('capture-clarification-text');
+        const captureDestination = document.getElementById('capture-destination');
+        const captureTitle = document.getElementById('capture-title');
+        const captureResolveButton = document.getElementById('capture-resolve-button');
+        const captureKeepInboxButton = document.getElementById('capture-keep-inbox');
+        const captureDraftStatus = document.getElementById('capture-draft-status');
+        const captureClearDraftButton = document.getElementById('capture-clear-draft');
+        const captureMetrics = document.getElementById('capture-metrics');
+        const captureTemplateButtons = Array.from(document.querySelectorAll('.capture-template-chip'));
+        const captureTitleSuggestion = document.getElementById('capture-title-suggestion');
+        const captureUseSuggestedTitleButton = document.getElementById('capture-use-suggested-title');
+        const captureRecentPanel = document.getElementById('capture-recent-panel');
+        const captureRecentList = document.getElementById('capture-recent-list');
+        const captureRefreshRecentButton = document.getElementById('capture-refresh-recent');
+        const noteModal = document.getElementById('note-modal');
+        const noteCloseButton = document.getElementById('note-close-button');
+        const noteModalTitle = document.getElementById('note-modal-title');
+        const noteModalPath = document.getElementById('note-modal-path');
+        const noteModalContent = document.getElementById('note-modal-content');
+        const appToast = document.getElementById('app-toast');
+        const organizeButton = document.getElementById('organize-button');
+        const organizeStatus = document.getElementById('organize-status');
+        const organizeResults = document.getElementById('organize-results');
+        const modelProvider = document.getElementById('model-provider');
+        const modelName = document.getElementById('model-name');
+        const modelBaseUrl = document.getElementById('model-base-url');
+        const modelApiKey = document.getElementById('model-api-key');
+        const testModelButton = document.getElementById('test-model-button');
+        const saveModelButton = document.getElementById('save-model-button');
+        const modelSettingsStatus = document.getElementById('model-settings-status');
+        const contentLibraryStatus = document.getElementById('content-library-status');
+        const contentLibraryResults = document.getElementById('content-library-results');
+
+        const conversationHistory = [];
+        let toastTimer = null;
+        let pendingCaptureClarification = null;
+        let captureMode = 'quick';
+        let pendingCaptureImage = null;
+        let recentCaptures = {{ recent_notes | tojson }};
+        const CAPTURE_DRAFT_KEY = 'mykb.captureDraft';
+
+        const captureTemplates = {
+            incident: 'Issue:\nService:\nICM/Case:\nSymptom:\nFix:\nLearning:',
+            learning: 'Service:\nLearning:\nWhy it mattered:\nNext time:',
+            case: 'Case:\nService:\nCustomer impact:\nCurrent finding:\nNext action:',
+            meeting: 'Topic:\nService:\nDecision:\nFollow-up:\nNotes:'
+        };
+
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function formatText(text) {
+            return escapeHtml(text).replace(/\n/g, '<br>');
+        }
+
+        function formatMarkdownText(text) {
+            return String(text || '').replace(/\r\n/g, '\n');
+        }
+
+        function introMessageHtml() {
+            return `
+                <article class="chat-message assistant intro-message">
+                    <div class="avatar assistant-avatar">AI</div>
+                    <div class="message-stack">
+                        <div class="message-bubble assistant-bubble empty">Ask a question and I will answer from your notes.</div>
+                    </div>
+                </article>
+            `;
+        }
+
+        function autoResizeTextarea(textarea) {
+            textarea.style.height = '0px';
+            textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
+        }
+
+        function currentCaptureText() {
+            return captureMode === 'quick' ? captureQuickInput.value : captureInput.value;
+        }
+
+        function setCaptureText(value) {
+            captureQuickInput.value = value;
+            captureInput.value = value;
+            autoResizeTextarea(captureInput);
+            updateCaptureMetrics();
+            updateTitleSuggestion();
+        }
+
+        function setQuickCaptureStatus(message = '') {
+            const hasMessage = Boolean(String(message || '').trim());
+            captureQuickStatus.textContent = message;
+            captureQuickFeedbackRow.classList.toggle('hidden', !hasMessage);
+        }
+
+        function currentCaptureImage() {
+            return pendingCaptureImage;
+        }
+
+        function clearCaptureImage() {
+            pendingCaptureImage = null;
+            updateCaptureMetrics();
+        }
+
+        function handleCapturePaste(event) {
+            if (captureMode !== 'detailed' || !event.clipboardData) {
+                return;
+            }
+
+            const items = Array.from(event.clipboardData.items || []);
+            const imageItem = items.find((item) => item.type && item.type.startsWith('image/'));
+            if (!imageItem) {
+                return;
+            }
+
+            const blob = imageItem.getAsFile();
+            if (!blob) {
+                return;
+            }
+
+            const hasPlainText = items.some((item) => item.type === 'text/plain');
+            const extension = (blob.type || 'image/png').split('/')[1] || 'png';
+            pendingCaptureImage = new File([blob], `pasted-screenshot.${extension}`, {
+                type: blob.type || 'image/png',
+                lastModified: Date.now(),
+            });
+            updateCaptureMetrics();
+            captureStatus.textContent = 'Screenshot pasted.';
+            showToast('Screenshot pasted', 'success');
+
+            if (!hasPlainText) {
+                event.preventDefault();
+            }
+        }
+
+        function switchCaptureMode(nextMode) {
+            const normalizedMode = nextMode === 'detailed' ? 'detailed' : 'quick';
+            const currentText = currentCaptureText();
+            captureMode = normalizedMode;
+            captureModeQuickButton.classList.toggle('active', captureMode === 'quick');
+            captureModeDetailedButton.classList.toggle('active', captureMode === 'detailed');
+            captureQuickShell.classList.toggle('hidden', captureMode !== 'quick');
+            captureToolbar.classList.add('hidden');
+            captureSuggestionPanel.classList.add('hidden');
+            captureInputLabel.classList.toggle('hidden', captureMode === 'quick');
+            captureInput.classList.toggle('hidden', captureMode === 'quick');
+            captureHelperRow.classList.toggle('hidden', captureMode === 'quick');
+            captureFooter.classList.toggle('hidden', captureMode === 'quick');
+            captureMeta.classList.toggle('hidden', captureMode === 'quick');
+            captureClarification.classList.toggle('hidden', captureMode === 'quick' || !pendingCaptureClarification);
+            captureRecentPanel.classList.add('hidden');
+            if (captureMode === 'quick') {
+                clearCaptureImage();
+                captureQuickInput.value = currentText;
+                captureQuickInput.focus();
+            } else {
+                captureInput.value = currentText;
+                autoResizeTextarea(captureInput);
+                captureInput.focus();
+            }
+            updateCaptureMetrics();
+        }
+
+        function meaningfulCaptureLines(text) {
+            return String(text || '')
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter(Boolean);
+        }
+
+        function sanitizeTitleSuggestion(text, maxWords = 8) {
+            const cleaned = String(text || '')
+                .replace(/^[-*#\s]+/, '')
+                .replace(/^[A-Za-z][A-Za-z\s/]+:\s*/, '')
+                .replace(/\b(ICM|Case)\b[:#\s-]*/gi, '$1 ')
+                .replace(/[^A-Za-z0-9()\-/\s]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (!cleaned) {
+                return '';
+            }
+            return cleaned.split(' ').slice(0, maxWords).join(' ');
+        }
+
+        function extractLabeledValue(text, label) {
+            const pattern = new RegExp(`^[-*#\\s]*${label}\\s*:\\s*(.+)$`, 'im');
+            const match = String(text || '').match(pattern);
+            return match ? match[1].trim() : '';
+        }
+
+        function normalizeServiceAnchor(service) {
+            const lowered = String(service || '').trim().toLowerCase();
+            if (!lowered) {
+                return '';
+            }
+            if (lowered.includes('expressroute')) {
+                return 'ExpressRoute';
+            }
+            if (lowered.includes('private endpoint') || lowered.includes('privateendpoint')) {
+                return 'Private Endpoint';
+            }
+            if (lowered.includes('sql')) {
+                return 'SQL';
+            }
+            if (lowered.includes('aks') || lowered.includes('kubernetes')) {
+                return 'AKS';
+            }
+            if (lowered.includes('copilot')) {
+                return 'Copilot';
+            }
+            if (lowered.includes('gpu') && lowered.includes('cluster')) {
+                return 'GPU cluster';
+            }
+            const primary = String(service || '').split(/[\/,]/)[0].replace(/\b(service|services|platform|networking|system|systems)\b/gi, '').trim();
+            return sanitizeTitleSuggestion(primary, 3);
+        }
+
+        function compactSummaryText(text) {
+            return String(text || '')
+                .replace(/^(customer|traffic|incident|issue)\s+/i, '')
+                .replace(/\b(saw|experienced|had)\b/i, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .replace(/^[.-]+|[.-]+$/g, '');
+        }
+
+        function deriveSuggestedTitle(text) {
+            const lines = meaningfulCaptureLines(text);
+            if (!lines.length) {
+                return '';
+            }
+
+            const service = extractLabeledValue(text, 'Service');
+            const priorityLabels = ['Issue', 'Topic', 'Symptom', 'Summary', 'Learning', 'Root Cause', 'Fix'];
+            let candidate = '';
+
+            for (const label of priorityLabels) {
+                const value = extractLabeledValue(text, label);
+                if (value) {
+                    candidate = value;
+                    break;
+                }
+            }
+
+            if (!candidate) {
+                candidate = lines[0];
+            }
+
+            candidate = compactSummaryText(candidate);
+            const anchor = normalizeServiceAnchor(service);
+            if (anchor && !candidate.toLowerCase().includes(anchor.toLowerCase())) {
+                candidate = `${anchor} ${candidate}`;
+            }
+
+            return sanitizeTitleSuggestion(candidate);
+        }
+
+        function updateTitleSuggestion() {
+            if (captureMode === 'quick') {
+                captureTitleSuggestion.textContent = 'Start typing and I will suggest a searchable title.';
+                captureUseSuggestedTitleButton.classList.add('hidden');
+                return;
+            }
+            const suggestion = deriveSuggestedTitle(currentCaptureText());
+            if (!suggestion) {
+                captureTitleSuggestion.textContent = 'Start typing and I will suggest a searchable title.';
+                captureUseSuggestedTitleButton.classList.add('hidden');
+                return;
+            }
+            captureTitleSuggestion.textContent = suggestion;
+            captureUseSuggestedTitleButton.classList.remove('hidden');
+        }
+
+        function captureDraftText() {
+            return currentCaptureText().trim();
+        }
+
+        function updateCaptureMetrics() {
+            const rawText = currentCaptureText();
+            const trimmedText = rawText.trim();
+            const lineCount = trimmedText ? trimmedText.split(/\r?\n/).length : 0;
+            const imageSuffix = pendingCaptureImage ? ' · screenshot ready' : '';
+            captureMetrics.textContent = `${lineCount} line${lineCount === 1 ? '' : 's'} · ${rawText.length} char${rawText.length === 1 ? '' : 's'}${imageSuffix}`;
+        }
+
+        function syncCaptureDraftState(message = '') {
+            const hasDraft = captureDraftText().length > 0;
+            captureClearDraftButton.classList.toggle('hidden', !hasDraft);
+            if (message) {
+                captureDraftStatus.textContent = message;
+                return;
+            }
+            captureDraftStatus.textContent = hasDraft ? 'Draft saved on this device' : 'Draft not started';
+        }
+
+        function persistCaptureDraft() {
+            const draft = currentCaptureText();
+            if (draft.trim()) {
+                window.localStorage.setItem(CAPTURE_DRAFT_KEY, draft);
+            } else {
+                window.localStorage.removeItem(CAPTURE_DRAFT_KEY);
+            }
+            syncCaptureDraftState();
+            updateCaptureMetrics();
+            updateTitleSuggestion();
+        }
+
+        function clearCaptureDraft(options = {}) {
+            const { preserveStatus = false } = options;
+            setCaptureText('');
+            window.localStorage.removeItem(CAPTURE_DRAFT_KEY);
+            if (preserveStatus) {
+                syncCaptureDraftState(captureDraftStatus.textContent);
+            } else {
+                syncCaptureDraftState('Draft cleared');
+            }
+        }
+
+        function loadCaptureDraft() {
+            const savedDraft = window.localStorage.getItem(CAPTURE_DRAFT_KEY) || '';
+            if (savedDraft && !currentCaptureText().trim()) {
+                setCaptureText(savedDraft);
+                switchCaptureMode(savedDraft.includes('\n') || savedDraft.length > 120 ? 'detailed' : 'quick');
+                syncCaptureDraftState('Restored unsaved draft');
+            } else {
+                syncCaptureDraftState();
+                if (!currentCaptureText().trim()) {
+                    switchCaptureMode('quick');
+                }
+            }
+        }
+
+        function insertCaptureTemplate(templateKey) {
+            const template = captureTemplates[templateKey];
+            if (!template) {
+                return;
+            }
+            const currentText = currentCaptureText();
+            const needsSpacing = currentText.trim().length > 0;
+            setCaptureText(needsSpacing ? `${currentText.trim()}\n\n${template}` : template);
+            switchCaptureMode('detailed');
+            persistCaptureDraft();
+            captureStatus.textContent = 'Template inserted.';
+        }
+
+        function setCaptureBusyState(isBusy, mode = 'save') {
+            captureButton.disabled = isBusy;
+            captureResolveButton.disabled = isBusy;
+            captureKeepInboxButton.disabled = isBusy;
+            captureInput.disabled = isBusy;
+            captureQuickInput.disabled = isBusy;
+            captureDestination.disabled = isBusy;
+            captureTitle.disabled = isBusy;
+            captureClearDraftButton.disabled = isBusy;
+            captureModeQuickButton.disabled = isBusy;
+            captureModeDetailedButton.disabled = isBusy;
+            captureUseSuggestedTitleButton.disabled = isBusy;
+            captureRefreshRecentButton.disabled = isBusy;
+            captureTemplateButtons.forEach((button) => {
+                button.disabled = isBusy;
+            });
+
+            if (isBusy) {
+                captureButton.textContent = mode === 'resolve' ? 'Saving...' : 'Saving...';
+                captureResolveButton.textContent = 'Creating...';
+            } else {
+                captureButton.textContent = 'Save Capture';
+                captureResolveButton.textContent = 'Create KB Note';
+            }
+        }
+
+        function syncComposerState() {
+            const hasText = askInput.value.trim().length > 0;
+            const isFocused = document.activeElement === askInput;
+            composerShell.classList.toggle('expanded', hasText || isFocused || chatStage.classList.contains('active-mode'));
+        }
+
+        function defaultAskStatusMessage() {
+            return appStatus.aiEnabled
+                ? 'Tip: use a hashtag like #incident or #sql to search one specific topic.'
+                : 'AI is required for recall. Open Settings to connect a provider first.';
+        }
+
+        function syncAIReadinessUI() {
+            askInput.placeholder = appStatus.aiEnabled ? 'Ask anything' : 'Configure AI in Settings first';
+            if (onboardingBanner) {
+                onboardingBanner.classList.toggle('hidden', appStatus.aiEnabled);
+            }
+
+            if (!askInput.value.trim()) {
+                askStatus.textContent = defaultAskStatusMessage();
+            }
+
+            const introBubble = conversation.querySelector('.intro-message .assistant-bubble');
+            if (introBubble) {
+                introBubble.textContent = appStatus.aiEnabled
+                    ? 'Ask a question and I will answer from your notes.'
+                    : 'Open Settings, connect AI, and then start asking questions about your notes.';
+            }
+        }
+
+        function syncFollowUpVisibility() {
+            const hasAssistantReply = conversationHistory.some((entry) => entry.role === 'assistant');
+            followUpToggleWrap.classList.toggle('hidden', !hasAssistantReply);
+            if (!hasAssistantReply) {
+                continueChatToggle.checked = false;
+            }
+        }
+
+        function setChatMode(mode) {
+            chatStage.classList.toggle('empty-mode', mode === 'empty');
+            chatStage.classList.toggle('active-mode', mode === 'active');
+            emptyState.classList.toggle('hidden', mode !== 'empty');
+            conversationShell.classList.toggle('hidden', mode !== 'active');
+        }
+
+        function createSourcePanel(results) {
+            if (!Array.isArray(results) || !results.length) {
+                return null;
+            }
+
+            const panel = document.createElement('section');
+            panel.className = 'source-panel';
+
+            const list = document.createElement('div');
+            list.className = 'source-list';
+
+            const detail = document.createElement('article');
+            detail.className = 'source-detail hidden';
+
+            const detailTitle = document.createElement('h3');
+            detailTitle.className = 'source-detail-title';
+
+            const actions = document.createElement('div');
+            actions.className = 'source-actions';
+
+            const openButton = document.createElement('button');
+            openButton.className = 'source-action-button';
+            openButton.type = 'button';
+            openButton.textContent = 'Open note';
+
+            const copyButton = document.createElement('button');
+            copyButton.className = 'source-action-button secondary-source-action';
+            copyButton.type = 'button';
+            copyButton.textContent = 'Copy path';
+
+            actions.appendChild(openButton);
+            actions.appendChild(copyButton);
+            detail.appendChild(detailTitle);
+            detail.appendChild(actions);
+
+            let selectedButton = null;
+
+            results.forEach((result, index) => {
+                const button = document.createElement('button');
+                button.className = 'source-pill';
+                button.type = 'button';
+                button.textContent = `Source ${index + 1}`;
+                button.title = result.title || result.path || `Source ${index + 1}`;
+                button.addEventListener('click', () => {
+                    if (selectedButton === button && !detail.classList.contains('hidden')) {
+                        button.classList.remove('active');
+                        selectedButton = null;
+                        detail.classList.add('hidden');
+                        return;
+                    }
+
+                    if (selectedButton) {
+                        selectedButton.classList.remove('active');
+                    }
+
+                    selectedButton = button;
+                    button.classList.add('active');
+                    detailTitle.textContent = result.title || `Source ${index + 1}`;
+                    openButton.onclick = () => {
+                        void openSourceNote(result.path || '', openButton);
+                    };
+                    copyButton.onclick = () => {
+                        void copySourcePath(result.path || '', copyButton);
+                    };
+                    detail.classList.remove('hidden');
+                });
+                list.appendChild(button);
+            });
+
+            panel.appendChild(list);
+            panel.appendChild(detail);
+            return panel;
+        }
+
+        function appendMessage(role, text, results = []) {
+            const message = document.createElement('article');
+            message.className = `chat-message ${role}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = `avatar ${role}-avatar`;
+            avatar.textContent = role === 'user' ? 'You' : 'AI';
+
+            const stack = document.createElement('div');
+            stack.className = 'message-stack';
+
+            const bubble = document.createElement('div');
+            bubble.className = `message-bubble ${role === 'user' ? 'user-bubble' : 'assistant-bubble'}`;
+            bubble.innerHTML = formatText(text);
+            stack.appendChild(bubble);
+
+            if (role === 'assistant') {
+                const sourcePanel = createSourcePanel(results);
+                if (sourcePanel) {
+                    stack.appendChild(sourcePanel);
+                }
+            }
+
+            message.appendChild(avatar);
+            message.appendChild(stack);
+            conversation.appendChild(message);
+            requestAnimationFrame(() => {
+                conversation.scrollTop = conversation.scrollHeight;
+            });
+
+            return message;
+        }
+
+        function addPendingAssistantMessage() {
+            const pendingMessage = appendMessage('assistant', 'Thinking...');
+            const bubble = pendingMessage.querySelector('.assistant-bubble');
+            if (bubble) {
+                bubble.classList.add('pending-bubble');
+                bubble.textContent = 'Thinking...';
+            }
+            pendingMessage.classList.add('pending-message');
+            return pendingMessage;
+        }
+
+        function removePendingAssistantMessage() {
+            const pendingMessage = conversation.querySelector('.pending-message');
+            if (pendingMessage) {
+                pendingMessage.remove();
+            }
+        }
+
+        function setAskLoadingState(isLoading) {
+            askButton.disabled = isLoading;
+            askInput.disabled = isLoading;
+            composerShell.classList.toggle('is-loading', isLoading);
+            askButton.textContent = isLoading ? '...' : 'Send';
+        }
+
+        function resetConversation(statusMessage = defaultAskStatusMessage()) {
+            conversationHistory.length = 0;
+            conversation.innerHTML = introMessageHtml();
+            continueChatToggle.checked = false;
+            askStatus.textContent = statusMessage;
+            askInput.value = '';
+            autoResizeTextarea(askInput);
+            setChatMode('empty');
+            syncFollowUpVisibility();
+            syncAIReadinessUI();
+        }
+
+        function openCaptureModal() {
+            captureModal.classList.remove('hidden');
+            captureModal.setAttribute('aria-hidden', 'false');
+            setQuickCaptureStatus('');
+            loadCaptureDraft();
+            renderRecentCaptures(recentCaptures);
+            void refreshRecentCaptures();
+        }
+
+        function closeCaptureModal() {
+            captureModal.classList.add('hidden');
+            captureModal.setAttribute('aria-hidden', 'true');
+            resetCaptureClarification();
+            clearCaptureImage();
+        }
+
+        function resetCaptureClarification() {
+            pendingCaptureClarification = null;
+            captureClarification.classList.add('hidden');
+            captureClarificationText.textContent = 'I saved the note, but I need one more input before I can create the KB note.';
+            captureDestination.innerHTML = '<option value="">Choose a KB folder</option>';
+            captureDestination.value = '';
+            captureTitle.value = deriveSuggestedTitle(currentCaptureText());
+        }
+
+        function showCaptureClarification(clarification) {
+            pendingCaptureClarification = clarification;
+            if (captureMode === 'quick') {
+                return;
+            }
+            captureClarification.classList.remove('hidden');
+            captureClarificationText.textContent = 'I could not place this confidently. Choose where it belongs and I will finish the KB note now.';
+            const optionsHtml = ['<option value="">Choose a KB folder</option>'];
+            (clarification.options || []).forEach((option) => {
+                optionsHtml.push(`<option value="${escapeHtml(option.key)}">${escapeHtml(option.label)} (${escapeHtml(option.path)})</option>`);
+            });
+            captureDestination.innerHTML = optionsHtml.join('');
+            if (clarification.suggestedTopicKey) {
+                captureDestination.value = clarification.suggestedTopicKey;
+            }
+            captureTitle.value = captureTitle.value.trim() || clarification.titleHint || deriveSuggestedTitle(currentCaptureText());
+        }
+
+        function renderRecentCaptures(items) {
+            const notes = Array.isArray(items) ? items.filter((item) => item.path && (item.path.startsWith('Inbox/') || item.path.startsWith('KB/') || item.path.startsWith('Quick Tips/'))) : [];
+            if (!notes.length) {
+                captureRecentList.innerHTML = '<p class="capture-recent-empty">No recent notes yet.</p>';
+                return;
+            }
+
+            captureRecentList.innerHTML = notes.slice(0, 6).map((item) => `
+                <article class="capture-recent-card">
+                    <div>
+                        <p class="recent-path">${escapeHtml(item.path || '')}</p>
+                        <h3>${escapeHtml(item.title || 'Untitled note')}</h3>
+                        <p>${escapeHtml(item.snippet || '')}</p>
+                    </div>
+                    <div class="capture-recent-actions">
+                        <button class="inline-action-button" type="button" data-open-note="${escapeHtml(item.path || '')}">Open</button>
+                        <button class="inline-action-button" type="button" data-reuse-note="${escapeHtml(item.path || '')}">Reuse Text</button>
+                    </div>
+                </article>
+            `).join('');
+        }
+
+        async function refreshRecentCaptures() {
+            try {
+                const response = await fetch('/api/recent');
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Could not load recent notes.');
+                }
+                recentCaptures = data;
+                renderRecentCaptures(recentCaptures);
+            } catch (_error) {
+                renderRecentCaptures(recentCaptures);
+            }
+        }
+
+        async function reuseRecentNote(path) {
+            captureStatus.textContent = `Loading ${path}...`;
+            try {
+                const response = await fetch(`/api/note?path=${encodeURIComponent(path)}`);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Could not load the note.');
+                }
+                setCaptureText(data.content || '');
+                switchCaptureMode((data.content || '').includes('\n') ? 'detailed' : 'quick');
+                persistCaptureDraft();
+                captureStatus.textContent = `Loaded ${path} into capture.`;
+                showToast('Recent note loaded into capture', 'success');
+            } catch (error) {
+                captureStatus.textContent = error.message;
+                showToast(error.message, 'error');
+            }
+        }
+
+        function openNoteModal(note) {
+            noteModalTitle.textContent = note.title || 'Note';
+            noteModalPath.textContent = note.path || '';
+            noteModalContent.textContent = formatMarkdownText(note.content || '');
+            noteModal.classList.remove('hidden');
+            noteModal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeNoteModal() {
+            noteModal.classList.add('hidden');
+            noteModal.setAttribute('aria-hidden', 'true');
+            noteModalTitle.textContent = 'Note';
+            noteModalPath.textContent = '';
+            noteModalContent.textContent = '';
+        }
+
+        function openFloatingPanel(panel) {
+            panel.classList.remove('hidden');
+            panel.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeFloatingPanel(panel) {
+            panel.classList.add('hidden');
+            panel.setAttribute('aria-hidden', 'true');
+        }
+
+        function showToast(message, tone = 'info') {
+            if (toastTimer) {
+                window.clearTimeout(toastTimer);
+            }
+
+            appToast.textContent = message;
+            appToast.dataset.tone = tone;
+            appToast.classList.remove('hidden');
+            appToast.classList.add('visible');
+
+            toastTimer = window.setTimeout(() => {
+                appToast.classList.remove('visible');
+                appToast.classList.add('hidden');
+            }, 2200);
+        }
+
+        function flashButtonState(button, temporaryLabel, duration = 1400) {
+            if (!button) {
+                return;
+            }
+
+            const originalLabel = button.dataset.originalLabel || button.textContent;
+            button.dataset.originalLabel = originalLabel;
+            button.disabled = true;
+            button.textContent = temporaryLabel;
+
+            window.setTimeout(() => {
+                button.textContent = originalLabel;
+                button.disabled = false;
+            }, duration);
+        }
+
+        async function copySourcePath(path, button) {
+            try {
+                await navigator.clipboard.writeText(path);
+                askStatus.textContent = `Copied source path: ${path}`;
+                flashButtonState(button, 'Copied');
+                showToast('Source path copied', 'success');
+            } catch (error) {
+                askStatus.textContent = 'Could not copy the source path.';
+                flashButtonState(button, 'Retry', 1200);
+                showToast('Could not copy source path', 'error');
+            }
+        }
+
+        async function openSourceNote(path, button) {
+            askStatus.textContent = `Opening ${path}...`;
+            if (button) {
+                const originalLabel = button.dataset.originalLabel || button.textContent;
+                button.dataset.originalLabel = originalLabel;
+                button.disabled = true;
+                button.textContent = 'Opening...';
+            }
+
+            try {
+                const response = await fetch(`/api/note?path=${encodeURIComponent(path)}`);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Could not load the note.');
+                }
+                openNoteModal(data);
+                askStatus.textContent = `Opened ${path}`;
+                flashButtonState(button, 'Opened');
+                showToast('Opened source note', 'success');
+            } catch (error) {
+                askStatus.textContent = error.message;
+                flashButtonState(button, 'Retry', 1200);
+                showToast(error.message, 'error');
+            }
+        }
+
+        function modelPayload() {
+            return {
+                provider: modelProvider.value,
+                model: modelName.value.trim(),
+                baseUrl: modelBaseUrl.value.trim(),
+                apiKey: modelApiKey.value.trim()
+            };
+        }
+
+        function renderContentLibraryStatus(data) {
+            if (!contentLibraryStatus || !contentLibraryResults) {
+                return;
+            }
+
+            contentLibraryStatus.textContent = data.message || 'This deployment starts with an empty managed knowledge base.';
+            const noteRoots = Array.isArray(appStatus.noteRoots) ? appStatus.noteRoots : [];
+            contentLibraryResults.innerHTML = `
+                <article class="content-library-card">
+                    <div>
+                        <p class="recent-path">Content Root</p>
+                        <h3>${escapeHtml(data.contentRoot || '')}</h3>
+                    </div>
+                    <p class="content-library-metrics">
+                        Mode: ${data.hostedMode ? 'Hosted' : 'Local'} · Managed roots: ${noteRoots.map((item) => escapeHtml(item)).join(', ')}
+                    </p>
+                </article>
+            `;
+        }
+
+        async function refreshContentLibraryStatus() {
+            contentLibraryStatus.textContent = 'Checking hosted content...';
+            try {
+                const response = await fetch('/api/content/status');
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Could not inspect hosted content.');
+                }
+                renderContentLibraryStatus(data);
+            } catch (error) {
+                contentLibraryStatus.textContent = error.message;
+            }
+        }
+
+        function applyProviderDefaults() {
+            if (modelProvider.value === 'github-models' && !modelBaseUrl.value.trim()) {
+                modelBaseUrl.value = 'https://models.inference.ai.azure.com';
+            }
+            if (modelProvider.value === 'openai' && !modelBaseUrl.value.trim()) {
+                modelBaseUrl.value = 'https://api.openai.com/v1';
+            }
+            if (modelProvider.value === 'azure-openai' && !modelBaseUrl.value.trim()) {
+                modelBaseUrl.value = 'https://your-resource.openai.azure.com/';
+            }
+        }
+
+        if (inboxPanelToggle) {
+            inboxPanelToggle.addEventListener('click', () => {
+                openFloatingPanel(inboxPanel);
+            });
+        }
+        if (settingsPanelToggle) {
+            settingsPanelToggle.addEventListener('click', () => {
+                openFloatingPanel(settingsPanel);
+                void refreshContentLibraryStatus();
+            });
+        }
+        if (onboardingOpenSettings) {
+            onboardingOpenSettings.addEventListener('click', () => {
+                openFloatingPanel(settingsPanel);
+                void refreshContentLibraryStatus();
+            });
+        }
+        if (inboxPanelClose) {
+            inboxPanelClose.addEventListener('click', () => {
+                closeFloatingPanel(inboxPanel);
+            });
+        }
+        if (settingsPanelClose) {
+            settingsPanelClose.addEventListener('click', () => {
+                closeFloatingPanel(settingsPanel);
+            });
+        }
+        if (quickCaptureToggle) {
+            quickCaptureToggle.addEventListener('click', openCaptureModal);
+        }
+        if (captureCloseButton) {
+            captureCloseButton.addEventListener('click', closeCaptureModal);
+        }
+        if (noteCloseButton) {
+            noteCloseButton.addEventListener('click', closeNoteModal);
+        }
+        captureModeQuickButton.addEventListener('click', () => {
+            switchCaptureMode('quick');
+        });
+        captureModeDetailedButton.addEventListener('click', () => {
+            switchCaptureMode('detailed');
+        });
+        captureUseSuggestedTitleButton.addEventListener('click', () => {
+            const suggestion = deriveSuggestedTitle(currentCaptureText());
+            if (!suggestion) {
+                return;
+            }
+            captureTitle.value = suggestion;
+            captureStatus.textContent = 'Suggested title copied into the title field.';
+            showToast('Suggested title copied', 'success');
+        });
+        captureRefreshRecentButton.addEventListener('click', () => {
+            void refreshRecentCaptures();
+        });
+        captureClearDraftButton.addEventListener('click', () => {
+            clearCaptureDraft();
+            captureStatus.textContent = 'Capture draft cleared.';
+        });
+        captureInput.addEventListener('paste', handleCapturePaste);
+        captureTemplateButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                insertCaptureTemplate(button.dataset.template || '');
+            });
+        });
+        inboxPanel.addEventListener('click', (event) => {
+            if (event.target === inboxPanel) {
+                closeFloatingPanel(inboxPanel);
+            }
+        });
+        settingsPanel.addEventListener('click', (event) => {
+            if (event.target === settingsPanel) {
+                closeFloatingPanel(settingsPanel);
+            }
+        });
+        captureModal.addEventListener('click', (event) => {
+            if (event.target === captureModal) {
+                closeCaptureModal();
+            }
+        });
+        noteModal.addEventListener('click', (event) => {
+            if (event.target === noteModal) {
+                closeNoteModal();
+            }
+        });
+        captureRecentList.addEventListener('click', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) {
+                return;
+            }
+            const openPath = target.getAttribute('data-open-note');
+            const reusePath = target.getAttribute('data-reuse-note');
+            if (openPath) {
+                void openSourceNote(openPath, null);
+            }
+            if (reusePath) {
+                void reuseRecentNote(reusePath);
+            }
+        });
+
+        newChatButton.addEventListener('click', () => {
+            resetConversation();
+            askInput.focus();
+        });
+
+        captureButton.addEventListener('click', async () => {
+            const rawNote = currentCaptureText().trim();
+            if (!rawNote) {
+                if (captureMode === 'quick') {
+                    setQuickCaptureStatus('');
+                } else {
+                    captureStatus.textContent = 'Add a note before saving.';
+                }
+                return;
+            }
+
+            if (captureMode === 'quick') {
+                setQuickCaptureStatus('');
+            } else {
+                captureStatus.textContent = 'Saving...';
+            }
+            captureMeta.innerHTML = '';
+            resetCaptureClarification();
+            setCaptureBusyState(true, 'save');
+            try {
+                const image = captureMode === 'detailed' ? currentCaptureImage() : null;
+                const data = image
+                    ? await (() => {
+                        const formData = new FormData();
+                        formData.append('note', rawNote);
+                        formData.append('mode', captureMode);
+                        formData.append('image', image);
+                        return postForm('/api/capture', formData);
+                    })()
+                    : await postJson('/api/capture', { note: rawNote, mode: captureMode });
+                const autoOrganized = data.autoOrganized || { organized: [], keptFiles: [], deletedFiles: [] };
+                if (captureMode === 'quick') {
+                    clearCaptureDraft({ preserveStatus: true });
+                    await refreshRecentCaptures();
+                    setQuickCaptureStatus('Saved');
+                    captureQuickInput.focus();
+                    return;
+                }
+                if (data.needsClarification) {
+                    captureStatus.textContent = `${data.message} ${data.savedTo}`;
+                    showCaptureClarification(data.needsClarification);
+                    captureMeta.innerHTML = '<p>This note still needs one quick choice before I can create the KB note.</p>';
+                    syncCaptureDraftState('Saved to Inbox. Finish the routing below.');
+                } else if (autoOrganized.organized.length) {
+                    const firstDestination = autoOrganized.organized[0].destination || data.savedTo;
+                    captureStatus.textContent = `Saved and organized to ${firstDestination}`;
+                    captureMeta.innerHTML = '';
+                    syncCaptureDraftState('Capture completed');
+                } else {
+                    captureStatus.textContent = `${data.message} ${data.savedTo}`;
+                    syncCaptureDraftState('Saved to Inbox');
+                }
+
+                if (!data.needsClarification && autoOrganized.organized.length) {
+                    const organizedSummary = autoOrganized.organized.map((item) => `${escapeHtml(item.title)} -> ${escapeHtml(item.destination)}`).join('<br>');
+                    captureMeta.innerHTML = `<p>Auto-organized ${autoOrganized.organized.length} note${autoOrganized.organized.length === 1 ? '' : 's'}:</p><p>${organizedSummary}</p>`;
+                }
+                if (!data.needsClarification) {
+                    clearCaptureDraft({ preserveStatus: true });
+                    clearCaptureImage();
+                    await refreshRecentCaptures();
+                }
+                if (data.needsClarification) {
+                    setCaptureText(rawNote);
+                }
+                showToast(data.needsClarification ? 'Capture saved, routing needed' : 'Capture saved', 'success');
+            } catch (error) {
+                if (captureMode === 'quick') {
+                    setQuickCaptureStatus('Could not save');
+                } else {
+                    captureStatus.textContent = error.message;
+                }
+                showToast(error.message, 'error');
+            } finally {
+                setCaptureBusyState(false);
+            }
+        });
+
+        captureResolveButton.addEventListener('click', async () => {
+            if (!pendingCaptureClarification) {
+                captureStatus.textContent = 'There is no pending capture to clarify.';
+                return;
+            }
+
+            if (!captureDestination.value) {
+                captureStatus.textContent = 'Choose a KB destination first.';
+                return;
+            }
+
+            captureStatus.textContent = 'Creating KB note...';
+            setCaptureBusyState(true, 'resolve');
+            try {
+                const data = await postJson('/api/capture/resolve', {
+                    captureId: pendingCaptureClarification.captureId,
+                    savedTo: pendingCaptureClarification.savedTo,
+                    destinationKey: captureDestination.value,
+                    title: captureTitle.value.trim(),
+                });
+                captureStatus.textContent = `Saved and organized to ${data.resolved.destination}`;
+                captureMeta.innerHTML = `<p>${escapeHtml(data.resolved.title)} -> ${escapeHtml(data.resolved.destination)}</p>`;
+                resetCaptureClarification();
+                clearCaptureDraft({ preserveStatus: true });
+                syncCaptureDraftState('Capture completed');
+                await refreshRecentCaptures();
+                showToast('Capture organized', 'success');
+            } catch (error) {
+                captureStatus.textContent = error.message;
+                showToast(error.message, 'error');
+            } finally {
+                setCaptureBusyState(false);
+            }
+        });
+
+        captureKeepInboxButton.addEventListener('click', () => {
+            captureStatus.textContent = 'Kept in Inbox for later review.';
+            captureMeta.innerHTML = '<p>You can still backfill this note later if needed.</p>';
+            resetCaptureClarification();
+            if (captureMode === 'quick') {
+                captureQuickInput.focus();
+            } else {
+                captureInput.focus();
+            }
+        });
+
+        askButton.addEventListener('click', async () => {
+            if (!appStatus.aiEnabled) {
+                askStatus.textContent = 'AI is required for recall. Open Settings to connect a provider first.';
+                openFloatingPanel(settingsPanel);
+                return;
+            }
+
+            const query = askInput.value.trim();
+            if (!query) {
+                askStatus.textContent = 'Enter a question first.';
+                return;
+            }
+
+            const continueChat = continueChatToggle.checked;
+            const requestHistory = continueChat ? [...conversationHistory] : [];
+            askStatus.textContent = 'Searching...';
+            setAskLoadingState(true);
+
+            try {
+                setChatMode('active');
+                if (!continueChat) {
+                    conversationHistory.length = 0;
+                    conversation.innerHTML = '';
+                    syncFollowUpVisibility();
+                } else {
+                    const intro = conversation.querySelector('.intro-message');
+                    if (intro) {
+                        intro.remove();
+                    }
+                }
+
+                appendMessage('user', query);
+                askInput.value = '';
+                autoResizeTextarea(askInput);
+                syncComposerState();
+                addPendingAssistantMessage();
+                await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+                const data = await postJson('/api/ask', {
+                    query,
+                    history: requestHistory,
+                });
+
+                removePendingAssistantMessage();
+                appendMessage('assistant', data.answer, data.results || []);
+                if (continueChat) {
+                    conversationHistory.length = 0;
+                    conversationHistory.push(...requestHistory, { role: 'user', content: query }, { role: 'assistant', content: data.answer, sources: data.results || [] });
+                } else {
+                    conversationHistory.length = 0;
+                    conversationHistory.push({ role: 'user', content: query }, { role: 'assistant', content: data.answer, sources: data.results || [] });
+                }
+                askStatus.textContent = `${data.results.length} notes found${data.aiUsed ? ' · AI synthesis' : ' · fallback search'}`;
+                syncFollowUpVisibility();
+                syncComposerState();
+            } catch (error) {
+                removePendingAssistantMessage();
+                askStatus.textContent = error.message;
+                setChatMode('active');
+                appendMessage('assistant', 'I could not answer that request because the local KB call failed.');
+                syncFollowUpVisibility();
+                syncComposerState();
+            } finally {
+                setAskLoadingState(false);
+                askInput.focus();
+            }
+        });
+
+        organizeButton.addEventListener('click', async () => {
+            organizeStatus.textContent = 'Organizing...';
+            organizeResults.innerHTML = '';
+            try {
+                const data = await postJson('/api/organize', {});
+                organizeStatus.textContent = `${data.organized.length} entries organized`;
+                const organizedCards = data.organized.map((item) => `
+                    <article class="result-item">
+                        <p class="recent-path">${escapeHtml(item.destination)}</p>
+                        <h3>${escapeHtml(item.title)}</h3>
+                        <p>${escapeHtml(item.summary)}</p>
+                    </article>
+                `).join('');
+                const kept = data.keptFiles.length ? `<article class="result-item"><h3>Kept In Inbox</h3><p>${escapeHtml(data.keptFiles.join(', '))}</p></article>` : '';
+                organizeResults.innerHTML = organizedCards || kept || '<article class="result-item"><p>No inbox entries were ready to promote.</p></article>';
+                if (kept && organizedCards) {
+                    organizeResults.innerHTML += kept;
+                }
+            } catch (error) {
+                organizeStatus.textContent = error.message;
+            }
+        });
+
+        modelProvider.addEventListener('change', applyProviderDefaults);
+
+        testModelButton.addEventListener('click', async () => {
+            applyProviderDefaults();
+            modelSettingsStatus.textContent = 'Testing connection...';
+            try {
+                const data = await postJson('/api/model-settings/test', modelPayload());
+                modelSettingsStatus.textContent = `Connected: ${data.message}`;
+            } catch (error) {
+                modelSettingsStatus.textContent = error.message;
+            }
+        });
+
+        saveModelButton.addEventListener('click', async () => {
+            applyProviderDefaults();
+            modelSettingsStatus.textContent = 'Saving settings...';
+            try {
+                const data = await postJson('/api/model-settings', modelPayload());
+                modelSettingsStatus.textContent = data.message;
+                modelApiKey.value = '';
+                appStatus.aiEnabled = Boolean(data.settings && data.settings.configured);
+                appStatus.aiProvider = data.settings && data.settings.provider ? data.settings.provider : '';
+                syncAIReadinessUI();
+                void refreshContentLibraryStatus();
+            } catch (error) {
+                modelSettingsStatus.textContent = error.message;
+            }
+        });
+
+        askInput.addEventListener('input', () => {
+            autoResizeTextarea(askInput);
+            syncComposerState();
+        });
+
+        askInput.addEventListener('focus', () => {
+            syncComposerState();
+        });
+
+        askInput.addEventListener('blur', () => {
+            syncComposerState();
+        });
+
+        askInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                askButton.click();
+            }
+        });
+
+        captureInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                if (!pendingCaptureClarification) {
+                    captureButton.click();
+                } else {
+                    captureResolveButton.click();
+                }
+            }
+        });
+
+        captureInput.addEventListener('input', () => {
+            captureQuickInput.value = captureInput.value;
+            autoResizeTextarea(captureInput);
+            persistCaptureDraft();
+        });
+
+        captureQuickInput.addEventListener('input', () => {
+            captureInput.value = captureQuickInput.value;
+            if (captureQuickInput.value.includes('\n')) {
+                switchCaptureMode('detailed');
+                return;
+            }
+            persistCaptureDraft();
+        });
+
+        captureQuickInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                if (!pendingCaptureClarification) {
+                    captureButton.click();
+                } else {
+                    captureResolveButton.click();
+                }
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !captureModal.classList.contains('hidden')) {
+                closeCaptureModal();
+            }
+            if (event.key === 'Escape' && !noteModal.classList.contains('hidden')) {
+                closeNoteModal();
+            }
+            if (event.key === 'Escape' && !inboxPanel.classList.contains('hidden')) {
+                closeFloatingPanel(inboxPanel);
+            }
+            if (event.key === 'Escape' && !settingsPanel.classList.contains('hidden')) {
+                closeFloatingPanel(settingsPanel);
+            }
+        });
+
+        autoResizeTextarea(askInput);
+        updateCaptureMetrics();
+        syncCaptureDraftState();
+        renderRecentCaptures(recentCaptures);
+        updateTitleSuggestion();
+        resetConversation();
+        syncFollowUpVisibility();
+        syncComposerState();
+        syncAIReadinessUI();
+        void refreshContentLibraryStatus();
+    </script>
+</body>
+</html>

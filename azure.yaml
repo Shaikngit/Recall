@@ -1,0 +1,10 @@
+name: mykb
+metadata:
+  template: mykb-appservice@0.0.1
+infra:
+  path: infra
+services:
+  web:
+    project: .
+    language: py
+    host: appservice
