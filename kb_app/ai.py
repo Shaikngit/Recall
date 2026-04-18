@@ -21,7 +21,7 @@ DEFAULT_GITHUB_MODELS_URL = "https://models.inference.ai.azure.com"
 DEFAULT_OPENAI_URL = "https://api.openai.com/v1"
 DEFAULT_AZURE_OPENAI_API_VERSION = "2024-10-21"
 AZURE_COGNITIVE_SCOPE = "https://cognitiveservices.azure.com/.default"
-SETTINGS_DIR = Path(__file__).resolve().parents[1] / ".mykb"
+SETTINGS_DIR = Path(__file__).resolve().parents[1] / ".recall"
 SETTINGS_PATH = SETTINGS_DIR / "model-settings.json"
 
 

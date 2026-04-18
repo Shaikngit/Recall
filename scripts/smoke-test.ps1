@@ -9,7 +9,7 @@ $base = $BaseUrl.TrimEnd('/')
 $marker = "SMOKE-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 $captureNote = @"
 Smoke test note for $marker
-Service: MyKB
+Service: Recall
 Learning: smoke validation path
 "@
 

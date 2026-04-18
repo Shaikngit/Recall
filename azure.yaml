@@ -1,6 +1,6 @@
-name: mykb
+name: recall
 metadata:
-  template: mykb-appservice@0.0.1
+  template: recall-appservice@0.0.1
 infra:
   path: infra
 services:

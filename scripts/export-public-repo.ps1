@@ -1,5 +1,5 @@
 param(
-    [string]$OutputPath = (Join-Path $PSScriptRoot "..\.public-export\mykb-public")
+    [string]$OutputPath = (Join-Path $PSScriptRoot "..\.public-export\recall-public")
 )
 
 Set-StrictMode -Version Latest

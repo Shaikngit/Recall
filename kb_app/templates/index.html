@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MyKB Console</title>
+    <title>Recall</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
@@ -57,7 +57,7 @@
 
             <section class="composer-area">
                 <div id="composer-shell" class="composer-shell compact-composer-shell">
-                    <label class="sr-only" for="ask-input">Ask My KB</label>
+                    <label class="sr-only" for="ask-input">Ask Recall</label>
                     <div class="input-shell">
                         <textarea id="ask-input" class="chat-input minimal-input" placeholder="Ask anything"></textarea>
                         <label id="follow-up-toggle-wrap" class="composer-toggle hidden" for="continue-chat-toggle" title="Checked means this is a follow-up to the current chat. Unchecked means start fresh.">
@@ -364,7 +364,7 @@
         let captureMode = 'quick';
         let pendingCaptureImage = null;
         let recentCaptures = {{ recent_notes | tojson }};
-        const CAPTURE_DRAFT_KEY = 'mykb.captureDraft';
+        const CAPTURE_DRAFT_KEY = 'recall.captureDraft';
 
         const captureTemplates = {
             incident: 'Issue:\nService:\nICM/Case:\nSymptom:\nFix:\nLearning:',

@@ -2,7 +2,7 @@ targetScope = 'resourceGroup'
 
 @description('Short environment name used to derive globally unique resource names.')
 @minLength(1)
-param environmentName string = 'mykb'
+param environmentName string = 'recall'
 
 @description('Azure region for the deployment.')
 param location string = resourceGroup().location
@@ -43,7 +43,7 @@ param openAIDeploymentCapacity int = 1
 param openAINewAccountName string = ''
 
 @description('Linux path under /home used for persistent knowledge storage in App Service.')
-param contentMountPath string = '/home/mykb-content'
+param contentMountPath string = '/home/recall-content'
 
 var normalizedEnvironmentName = toLower(replace(environmentName, '-', ''))
 var uniqueSuffix = take(uniqueString(subscription().subscriptionId, resourceGroup().id, environmentName), 6)

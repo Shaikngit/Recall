@@ -49,7 +49,7 @@ Supported providers in the UI:
 - GitHub Models
 - OpenAI-compatible endpoints
 
-Settings are stored locally in `.mykb/model-settings.json`, which is ignored by git.
+Settings are stored locally in `.recall/model-settings.json`, which is ignored by git.
 
 ## Azure Hosting
 
