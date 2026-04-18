@@ -25,6 +25,9 @@
     },
     "openAINewAccountName": {
       "value": "${AZURE_OPENAI_ACCOUNT_NAME}"
+    },
+    "assignOpenAIRole": {
+      "value": "${AZURE_OPENAI_ASSIGN_ROLE}"
     }
   }
 }

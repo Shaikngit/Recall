@@ -8,6 +8,7 @@ param(
     [string]$OpenAiModelName = "gpt-4.1-mini",
     [int]$OpenAiDeploymentCapacity = 1,
     [string]$OpenAiAccountName,
+    [bool]$AssignOpenAiRole = $true,
     [string]$BaseUrl,
     [switch]$Login,
     [switch]$SkipSmokeTest
@@ -69,6 +70,8 @@ if ($PSBoundParameters.ContainsKey('OpenAiDeploymentCapacity')) {
 if ($PSBoundParameters.ContainsKey('OpenAiAccountName')) {
     azd env set AZURE_OPENAI_ACCOUNT_NAME $OpenAiAccountName
 }
+
+azd env set AZURE_OPENAI_ASSIGN_ROLE $AssignOpenAiRole
 
 Write-Host "Running azd provision --preview" -ForegroundColor Cyan
 azd provision --preview

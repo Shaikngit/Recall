@@ -77,6 +77,7 @@ azd env set AZURE_OPENAI_DEPLOYMENT <existing-deployment-name>
 azd env set AZURE_OPENAI_MODEL_NAME gpt-4.1-mini
 azd env set AZURE_OPENAI_DEPLOYMENT_CAPACITY 1
 azd env set AZURE_OPENAI_ACCOUNT_NAME ""
+azd env set AZURE_OPENAI_ASSIGN_ROLE true
 azd provision --preview
 azd up
 ```
@@ -94,6 +95,7 @@ azd env set AZURE_OPENAI_DEPLOYMENT <new-deployment-name>
 azd env set AZURE_OPENAI_MODEL_NAME gpt-4.1-mini
 azd env set AZURE_OPENAI_DEPLOYMENT_CAPACITY 1
 azd env set AZURE_OPENAI_ACCOUNT_NAME ""
+azd env set AZURE_OPENAI_ASSIGN_ROLE true
 azd provision --preview
 azd up
 ```
@@ -106,6 +108,11 @@ The Bicep template will create:
 - Azure OpenAI account and deployment when `AZURE_OPENAI_MODE` is `new`
 - Azure OpenAI RBAC assignment for the web app identity
 
+If your identity cannot create role assignments on the Azure OpenAI resource, set `AZURE_OPENAI_ASSIGN_ROLE=false` before `azd provision --preview`. The app will still deploy, but Azure OpenAI access must then be completed separately by either:
+
+- having someone with `User Access Administrator` or `Owner` grant the web app's managed identity the `Cognitive Services OpenAI User` role on the Azure OpenAI account
+- or configuring another supported provider in the app settings UI after deployment
+
 ### Deployment Helper Script
 
 There is also a local deployment helper:
@@ -113,6 +120,7 @@ There is also a local deployment helper:
 ```powershell
 .\deploy-local.ps1 -Login -OpenAiMode existing -OpenAiResourceId <resource-id> -OpenAiDeployment <deployment-name>
 .\deploy-local.ps1 -Login -OpenAiMode new -OpenAiDeployment <deployment-name> -OpenAiModelName gpt-4.1-mini
+.\deploy-local.ps1 -Login -OpenAiMode existing -OpenAiResourceId <resource-id> -OpenAiDeployment <deployment-name> -AssignOpenAiRole $false
 ```
 
 Pass `-BaseUrl` if you want the script to run the post-deploy health check and smoke test.

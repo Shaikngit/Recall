@@ -42,6 +42,9 @@ param openAIDeploymentCapacity int = 1
 @description('Optional Azure OpenAI account name when openAIMode is new. Leave blank to derive a unique name.')
 param openAINewAccountName string = ''
 
+@description('Whether the deployment should create the Azure OpenAI RBAC assignment for the web app managed identity. Set to false when you do not have permission to write role assignments on the target Azure OpenAI resource.')
+param assignOpenAIRole bool = true
+
 @description('Linux path under /home used for persistent knowledge storage in App Service.')
 param contentMountPath string = '/home/recall-content'
 
@@ -174,7 +177,7 @@ resource scmPublishingPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPoli
   }
 }
 
-module openAIRoleAssignment 'modules/openai-role-assignment.bicep' = {
+module openAIRoleAssignment 'modules/openai-role-assignment.bicep' = if (assignOpenAIRole) {
   name: 'openai-role-assignment'
   scope: resourceGroup(effectiveOpenAIResourceGroupName)
   params: {
@@ -188,5 +191,7 @@ module openAIRoleAssignment 'modules/openai-role-assignment.bicep' = {
 output appServicePlanName string = appServicePlan.name
 output openAIAccountName string = effectiveOpenAIAccountName
 output openAIMode string = openAIMode
+output openAIRoleAssignmentEnabled bool = assignOpenAIRole
+output webAppPrincipalId string = webApp.identity.principalId!
 output webAppName string = webApp.name
 output webAppUrl string = 'https://${webApp.properties.defaultHostName}'
