@@ -156,6 +156,8 @@ Before using it, add this repository secret in GitHub:
 
 After that, pushing to `main` in the public repo can deploy the app automatically.
 
+That workflow also runs the repo's smoke test against the live production URL after deployment, so the GitHub run only finishes green when the app is responding correctly.
+
 ## Smoke Test
 
 ```powershell

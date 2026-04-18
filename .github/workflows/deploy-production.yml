@@ -13,6 +13,8 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      APP_URL: https://app-mykbshaikn-th6h7z.azurewebsites.net
 
     steps:
       - name: Check out repository
@@ -76,3 +78,7 @@ jobs:
             --track-status true \
             --async false \
             --timeout 600000
+
+      - name: Run post-deploy smoke test
+        shell: pwsh
+        run: .\scripts\smoke-test.ps1 -BaseUrl $env:APP_URL
