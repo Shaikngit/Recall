@@ -70,6 +70,7 @@ Key behavior:
 - The app no longer imports packaged markdown folders into hosted storage
 - Azure OpenAI is the first-class infrastructure path for deployment
 - When Blob mode is enabled, the app keeps a local cache and syncs markdown files to Azure Blob Storage
+- Runtime storage diagnostics are available from `/api/status`, `/api/content/status`, and `/api/storage/diagnostics`
 
 ### Preferred Hosted Storage: Azure Blob Storage
 
@@ -171,26 +172,6 @@ If you already have an App Service that was created from an earlier private repo
 
 This path is the safest way to move day-to-day product development to the public repo while keeping an older production website stable.
 
-### Add Azure Files To The Existing Production App
-
-If you want the existing production App Service to store the KB on Azure Files instead of the App Service local `/home` disk, do a one-time infrastructure update first.
-
-This path only works when the target storage account permits shared-key authentication. If your admin policy disables shared key access, use the Blob Storage path above instead.
-
-This repo includes a Bicep template and helper script for that path:
-
-```powershell
-.\scripts\configure-existing-appservice-storage.ps1 -ResourceGroup rg-mykb-shaikn -AppName app-mykbshaikn-th6h7z -StorageAccountName <globally-unique-storage-account-name>
-```
-
-That template will:
-
-- Create a Storage Account for KB content
-- Create an Azure Files share
-- Mount the share into the existing Linux App Service at `/mounts/mykb-content`
-
-After that one-time mount setup, normal GitHub Actions pushes can continue doing code-only deploys. The app will automatically use the Azure Files mount when it is present.
-
 ### GitHub Push Deploy
 
 The public repo also includes a GitHub Actions workflow for deploying to the existing production App Service on pushes to `main` or by manual dispatch.
@@ -202,8 +183,6 @@ Before using it, add this repository secret in GitHub:
 - `AZURE_SUBSCRIPTION_ID`: `58400668-ed03-47a3-a7f8-fb03677bdffb`
 
 After that, pushing to `main` in the public repo can deploy the app automatically.
-
-Important: this workflow deploys application code only. It does not provision Azure Storage or create the Azure Files mount. Run the one-time Azure Files setup first if you want production KB content off the App Service local disk.
 
 For the Blob Storage path, this workflow still deploys code only. You must separately enable the App Service managed identity, grant `Storage Blob Data Contributor` on the storage account, and add the Blob app settings before the hosted app starts using Blob Storage.
 
@@ -222,6 +201,7 @@ The script checks `/`, `/healthz`, `/api/recent`, then performs a capture and as
 
 - `kb_app/app.py`: Flask routes
 - `kb_app/core.py`: capture, search, and organization logic
+- `kb_app/blob_content.py`: Blob-backed cache, diagnostics, and sync logic
 - `kb_app/ai.py`: provider integration and token handling
 - `kb_app/templates/index.html`: browser UI
 - `infra/main.bicep`: Azure infrastructure

@@ -79,6 +79,10 @@ def create_app() -> Flask:
     def content_status() -> object:
         return jsonify(get_content_library_status())
 
+    @app.get("/api/storage/diagnostics")
+    def storage_diagnostics() -> object:
+        return jsonify(get_content_library_status())
+
     @app.post("/api/content/import")
     def import_content() -> object:
         payload = request.get_json(silent=True) or {}
