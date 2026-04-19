@@ -15,7 +15,6 @@ CONTENT_ROOT = Path(os.getenv("MYKB_CONTENT_ROOT", APP_ROOT.as_posix())).expandu
 INBOX_DIR = CONTENT_ROOT / "Inbox"
 KB_DIR = CONTENT_ROOT / "KB"
 QUICK_TIPS_DIR = CONTENT_ROOT / "Quick Tips"
-ATTACHMENTS_DIR = APP_ROOT / "attachments"
 LEGACY_NOTE_ROOTS_ENV = "MYKB_LEGACY_NOTE_ROOTS"
 MANAGED_NOTE_ROOT_NAMES = ("Inbox", "KB", "Quick Tips")
 
@@ -372,36 +371,11 @@ def summarize_text_for_kb(raw_text: str, ai_helper: object | None = None) -> dic
     return draft
 
 
-def repo_relative_path(path: Path) -> str:
-    return Path(os.path.relpath(path, APP_ROOT)).as_posix()
-
-
-def note_relative_path(from_path: Path, to_path: Path) -> str:
-    return Path(os.path.relpath(to_path, start=from_path.parent)).as_posix()
-
-
-def save_capture_attachment(image_bytes: bytes, original_name: str | None = None) -> Path:
-    ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
-    suffix = Path(original_name or "screenshot.png").suffix.lower()
-    if suffix not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
-        suffix = ".png"
-    stem_source = Path(original_name or "screenshot").stem.lower()
-    stem = re.sub(r"[^a-z0-9]+", "-", stem_source).strip("-") or "screenshot"
-    candidate = ATTACHMENTS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-{stem[:40]}{suffix}"
-    counter = 2
-    while candidate.exists():
-        candidate = ATTACHMENTS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-{stem[:40]}-{counter}{suffix}"
-        counter += 1
-    candidate.write_bytes(image_bytes)
-    return candidate
-
-
 def write_kb_note_from_capture(
     destination_path: Path,
     raw_text: str,
     draft: dict[str, str],
     hashtags: list[str] | None = None,
-    attachment_path: Path | None = None,
     extracted_text: str = "",
 ) -> None:
     cleaned_text = raw_text.strip()
@@ -419,14 +393,6 @@ def write_kb_note_from_capture(
     body_lines.append("")
     body_lines.append("## Summary")
     body_lines.append(draft.get("summary") or first_meaningful_line(cleaned_text))
-    if attachment_path is not None:
-        body_lines.extend(
-            [
-                "",
-                "## Attachment",
-                f"- Screenshot: [{repo_relative_path(attachment_path)}]({note_relative_path(destination_path, attachment_path)})",
-            ]
-        )
     if draft.get("fix"):
         body_lines.extend(["", "## Fix", draft["fix"]])
     if draft.get("learning"):
@@ -451,7 +417,6 @@ def save_detailed_capture(
     raw_note: str,
     ai_helper: object | None = None,
     screenshot_bytes: bytes | None = None,
-    screenshot_filename: str | None = None,
     screenshot_mime_type: str | None = None,
 ) -> dict[str, str] | None:
     initialize_content_root()
@@ -467,12 +432,10 @@ def save_detailed_capture(
     if not cleaned_text:
         cleaned_text = raw_note.strip()
 
-    attachment_path = None
     extracted_text = ""
     if screenshot_bytes is not None:
         if ai_helper is None:
             raise ValueError("Configure a vision-capable AI model before uploading screenshots.")
-        attachment_path = save_capture_attachment(screenshot_bytes, screenshot_filename)
         try:
             image_draft = ai_helper.summarize_note_with_image(
                 cleaned_text,
@@ -497,7 +460,6 @@ def save_detailed_capture(
         cleaned_text,
         draft,
         hashtags=hashtags,
-        attachment_path=attachment_path,
         extracted_text=extracted_text,
     )
     return {

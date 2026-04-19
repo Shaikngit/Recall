@@ -158,7 +158,6 @@ def create_app() -> Flask:
                 raw_note,
                 ai_helper if ai_helper.is_configured else None,
                 screenshot_bytes=screenshot_bytes,
-                screenshot_filename=image_file.filename if image_file and image_file.filename else None,
                 screenshot_mime_type=image_file.mimetype if image_file and image_file.mimetype else None,
             )
         except ValueError as error:
