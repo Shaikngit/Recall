@@ -9,9 +9,26 @@ from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
 
+from kb_app.blob_content import BlobContentStore
+
 
 APP_ROOT = Path(__file__).resolve().parents[1]
-CONTENT_ROOT = Path(os.getenv("MYKB_CONTENT_ROOT", APP_ROOT.as_posix())).expanduser().resolve()
+DEFAULT_AZURE_FILES_CONTENT_ROOT = Path('/mounts/mykb-content')
+CONTENT_STORE = BlobContentStore.from_environment(APP_ROOT)
+
+
+def resolve_content_root() -> Path:
+    if CONTENT_STORE.enabled:
+        return CONTENT_STORE.runtime_root
+    configured_root = os.getenv("MYKB_CONTENT_ROOT", "").strip()
+    if configured_root:
+        return Path(configured_root).expanduser().resolve()
+    if DEFAULT_AZURE_FILES_CONTENT_ROOT.exists():
+        return DEFAULT_AZURE_FILES_CONTENT_ROOT
+    return APP_ROOT
+
+
+CONTENT_ROOT = resolve_content_root()
 INBOX_DIR = CONTENT_ROOT / "Inbox"
 KB_DIR = CONTENT_ROOT / "KB"
 QUICK_TIPS_DIR = CONTENT_ROOT / "Quick Tips"
@@ -133,6 +150,7 @@ def append_to_daily_inbox(raw_note: str) -> tuple[Path, str]:
         note_path.write_text(note_path.read_text(encoding="utf-8").rstrip() + entry + "\n", encoding="utf-8")
     else:
         note_path.write_text(heading + entry + "\n", encoding="utf-8")
+    sync_content_write(note_path)
 
     return note_path, capture_id
 
@@ -157,6 +175,7 @@ def save_quick_tip(raw_note: str) -> Path:
         "",
     ]
     destination_path.write_text("\n".join(lines), encoding="utf-8")
+    sync_content_write(destination_path)
     return destination_path
 
 
@@ -411,6 +430,7 @@ def write_kb_note_from_capture(
         destination_path.write_text(merged, encoding="utf-8")
     else:
         destination_path.write_text(body, encoding="utf-8")
+    sync_content_write(destination_path)
 
 
 def save_detailed_capture(
@@ -585,9 +605,12 @@ def note_inventory(base_root: Path) -> dict[str, set[str]]:
 def get_content_library_status() -> dict[str, object]:
     initialize_content_root()
     return {
-        "hostedMode": CONTENT_ROOT != APP_ROOT,
+        "hostedMode": CONTENT_STORE.enabled or CONTENT_ROOT != APP_ROOT,
         "repoRoot": APP_ROOT.as_posix(),
         "contentRoot": CONTENT_ROOT.as_posix(),
+        "storageBackend": "blob" if CONTENT_STORE.enabled else "local",
+        "blobAccountUrl": CONTENT_STORE.account_url if CONTENT_STORE.enabled else "",
+        "blobContainer": CONTENT_STORE.container_name if CONTENT_STORE.enabled else "",
         "roots": [],
         "missingRootCount": 0,
         "missingNoteCount": 0,
@@ -1089,6 +1112,7 @@ def remove_inbox_entry(note_path: Path, capture_id: str) -> None:
         rewrite_inbox_file(note_path, remaining_entries)
     else:
         note_path.unlink(missing_ok=True)
+        sync_content_delete(note_path)
 
 
 def resolve_capture_clarification(
@@ -1193,6 +1217,7 @@ def organize_inbox(ai_helper: object | None = None, inbox_paths: Iterable[Path] 
             kept_files.append(relative_note_path(inbox_path))
         else:
             inbox_path.unlink(missing_ok=True)
+            sync_content_delete(inbox_path)
             deleted_files.append(relative_note_path(inbox_path))
 
     return {
@@ -1257,6 +1282,7 @@ def write_kb_note(destination_path: Path, entry: InboxEntry, draft: dict[str, st
         destination_path.write_text(merged, encoding="utf-8")
     else:
         destination_path.write_text(body, encoding="utf-8")
+    sync_content_write(destination_path)
 
 
 def rewrite_inbox_file(inbox_path: Path, entries: list[InboxEntry]) -> None:
@@ -1272,6 +1298,7 @@ def rewrite_inbox_file(inbox_path: Path, entries: list[InboxEntry]) -> None:
         lines.extend(entry.body)
         lines.append("")
     inbox_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    sync_content_write(inbox_path)
 
 
 def app_status(ai_helper: object | None = None) -> dict[str, object]:
@@ -1279,7 +1306,10 @@ def app_status(ai_helper: object | None = None) -> dict[str, object]:
     return {
         "repoRoot": APP_ROOT.as_posix(),
         "contentRoot": CONTENT_ROOT.as_posix(),
-        "hostedMode": CONTENT_ROOT != APP_ROOT,
+        "hostedMode": CONTENT_STORE.enabled or CONTENT_ROOT != APP_ROOT,
+        "storageBackend": "blob" if CONTENT_STORE.enabled else "local",
+        "blobAccountUrl": CONTENT_STORE.account_url if CONTENT_STORE.enabled else "",
+        "blobContainer": CONTENT_STORE.container_name if CONTENT_STORE.enabled else "",
         "aiEnabled": ai_enabled,
         "aiRequired": True,
         "aiProvider": getattr(ai_helper, "provider", "") if ai_helper else "",
@@ -1309,11 +1339,21 @@ def initialize_content_root() -> Path:
     INBOX_DIR.mkdir(parents=True, exist_ok=True)
     KB_DIR.mkdir(parents=True, exist_ok=True)
     QUICK_TIPS_DIR.mkdir(parents=True, exist_ok=True)
+    CONTENT_STORE.ensure_ready()
     return CONTENT_ROOT
 
 
 def content_root_has_notes() -> bool:
+    initialize_content_root()
     return any(CONTENT_ROOT.rglob("*.md"))
+
+
+def sync_content_write(path: Path) -> None:
+    CONTENT_STORE.upload_file(path)
+
+
+def sync_content_delete(path: Path) -> None:
+    CONTENT_STORE.delete_file(path)
 
 
 def relative_note_path(path: Path) -> str:

@@ -65,11 +65,38 @@ The app is prepared for Azure App Service with `azd`.
 
 Key behavior:
 
-- Hosted notes are stored under App Service persistent `/home` storage through `MYKB_CONTENT_ROOT`
+- Hosted notes can run in either local filesystem mode or Blob-backed mode
 - Fresh hosted deployments start empty
 - The app no longer imports packaged markdown folders into hosted storage
 - Azure OpenAI is the first-class infrastructure path for deployment
-- The default hosted content root is `/home/mykb-content` to stay compatible with older MyKB App Service deployments
+- When Blob mode is enabled, the app keeps a local cache and syncs markdown files to Azure Blob Storage
+
+### Preferred Hosted Storage: Azure Blob Storage
+
+The recommended hosted storage path is Azure Blob Storage with managed identity. This avoids storage account keys, custom Azure Files mounts, and the shared-key restriction that blocked the previous Azure Files attempt.
+
+Set these App Service settings:
+
+```text
+MYKB_BLOB_ACCOUNT_URL=https://<storage-account-name>.blob.core.windows.net
+MYKB_BLOB_CONTAINER=mykb-content
+MYKB_BLOB_CACHE_ROOT=/tmp/mykb-content-cache
+MYKB_BLOB_REFRESH_SECONDS=30
+```
+
+Optional cutover setting for the first startup only:
+
+```text
+MYKB_BLOB_BOOTSTRAP_ROOT=/home/mykb-content
+```
+
+That bootstrap setting tells the app to upload existing hosted markdown files into the blob container if the container is still empty. After the first successful startup and validation, remove `MYKB_BLOB_BOOTSTRAP_ROOT`.
+
+RBAC required on the storage account for the App Service managed identity:
+
+- `Storage Blob Data Contributor`
+
+Keep `MYKB_CONTENT_ROOT` unset when Blob mode is active unless you are intentionally using it as a temporary bootstrap source during migration.
 
 ### Deployment Modes
 
@@ -144,6 +171,26 @@ If you already have an App Service that was created from an earlier private repo
 
 This path is the safest way to move day-to-day product development to the public repo while keeping an older production website stable.
 
+### Add Azure Files To The Existing Production App
+
+If you want the existing production App Service to store the KB on Azure Files instead of the App Service local `/home` disk, do a one-time infrastructure update first.
+
+This path only works when the target storage account permits shared-key authentication. If your admin policy disables shared key access, use the Blob Storage path above instead.
+
+This repo includes a Bicep template and helper script for that path:
+
+```powershell
+.\scripts\configure-existing-appservice-storage.ps1 -ResourceGroup rg-mykb-shaikn -AppName app-mykbshaikn-th6h7z -StorageAccountName <globally-unique-storage-account-name>
+```
+
+That template will:
+
+- Create a Storage Account for KB content
+- Create an Azure Files share
+- Mount the share into the existing Linux App Service at `/mounts/mykb-content`
+
+After that one-time mount setup, normal GitHub Actions pushes can continue doing code-only deploys. The app will automatically use the Azure Files mount when it is present.
+
 ### GitHub Push Deploy
 
 The public repo also includes a GitHub Actions workflow for deploying to the existing production App Service on pushes to `main` or by manual dispatch.
@@ -155,6 +202,10 @@ Before using it, add this repository secret in GitHub:
 - `AZURE_SUBSCRIPTION_ID`: `58400668-ed03-47a3-a7f8-fb03677bdffb`
 
 After that, pushing to `main` in the public repo can deploy the app automatically.
+
+Important: this workflow deploys application code only. It does not provision Azure Storage or create the Azure Files mount. Run the one-time Azure Files setup first if you want production KB content off the App Service local disk.
+
+For the Blob Storage path, this workflow still deploys code only. You must separately enable the App Service managed identity, grant `Storage Blob Data Contributor` on the storage account, and add the Blob app settings before the hosted app starts using Blob Storage.
 
 That workflow also runs the repo's smoke test against the live production URL after deployment, so the GitHub run only finishes green when the app is responding correctly.
 
