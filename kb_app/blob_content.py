@@ -99,7 +99,7 @@ class BlobContentStore:
             if candidate.exists() and candidate != runtime_root:
                 return candidate
 
-        return app_root if app_root.exists() and app_root != runtime_root else None
+        return None
 
     @staticmethod
     def _parse_int_env(env_name: str, default_value: int) -> int:

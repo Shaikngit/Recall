@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from flask import Flask, jsonify, render_template, request
+import os
+
+from flask import Flask, abort, jsonify, render_template, request
 
 from kb_app.ai import AIHelper, AISettings, AISettingsStore
 from kb_app.core import (
@@ -12,6 +14,7 @@ from kb_app.core import (
     get_content_library_status,
     get_note_document,
     get_recent_notes,
+    get_storage_diagnostics,
     import_content_library,
     initialize_content_root,
     organize_inbox,
@@ -33,6 +36,20 @@ def create_app() -> Flask:
 
     def current_ai_helper() -> AIHelper:
         return AIHelper.from_settings(settings_store.load())
+
+    def admin_token() -> str:
+        return os.getenv("MYKB_ADMIN_TOKEN", "").strip()
+
+    def has_valid_admin_token() -> bool:
+        expected = admin_token()
+        if not expected:
+            return False
+        supplied = str(request.args.get("token", "")).strip()
+        if not supplied:
+            supplied = str(request.headers.get("X-Recall-Admin-Token", "")).strip()
+        if not supplied and request.method == "POST":
+            supplied = str(request.form.get("token", "")).strip()
+        return supplied == expected
 
     @app.get("/")
     def index() -> str:
@@ -79,9 +96,25 @@ def create_app() -> Flask:
     def content_status() -> object:
         return jsonify(get_content_library_status())
 
+    @app.route("/admin/storage", methods=["GET", "POST"])
+    def storage_admin() -> object:
+        expected_token = admin_token()
+        if not expected_token:
+            abort(404)
+        authorized = has_valid_admin_token()
+        diagnostics = get_storage_diagnostics() if authorized else None
+        return render_template(
+            "storage_admin.html",
+            authorized=authorized,
+            diagnostics=diagnostics,
+            token_value=str(request.values.get("token", "")).strip(),
+        )
+
     @app.get("/api/storage/diagnostics")
     def storage_diagnostics() -> object:
-        return jsonify(get_content_library_status())
+        if not has_valid_admin_token():
+            return jsonify({"error": "Admin token required."}), 403
+        return jsonify(get_storage_diagnostics())
 
     @app.post("/api/content/import")
     def import_content() -> object:

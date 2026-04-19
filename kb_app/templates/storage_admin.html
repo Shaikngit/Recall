@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Recall Storage Debug</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <main class="admin-shell">
+        <section class="admin-surface">
+            <header class="admin-header">
+                <div>
+                    <p class="surface-kicker">Admin</p>
+                    <h1>Storage Diagnostics</h1>
+                    <p class="utility-status">This page exposes Blob cache and sync state for operational debugging.</p>
+                </div>
+                <a class="inline-action-button" href="/">Back To Recall</a>
+            </header>
+
+            {% if not authorized %}
+            <form class="admin-form" method="post">
+                <label class="settings-field">
+                    <span>Admin token</span>
+                    <input class="settings-input" type="password" name="token" value="{{ token_value }}" placeholder="Enter MYKB_ADMIN_TOKEN">
+                </label>
+                <button class="utility-button" type="submit">Open Diagnostics</button>
+            </form>
+            <p class="utility-status">A valid `MYKB_ADMIN_TOKEN` is required to view storage diagnostics.</p>
+            {% else %}
+            <div class="admin-grid">
+                <article class="admin-stat">
+                    <span class="admin-stat-label">Storage account</span>
+                    <span class="admin-stat-value">{{ diagnostics.accountUrl }}</span>
+                </article>
+                <article class="admin-stat">
+                    <span class="admin-stat-label">Container</span>
+                    <span class="admin-stat-value">{{ diagnostics.container }}</span>
+                </article>
+                <article class="admin-stat">
+                    <span class="admin-stat-label">Runtime cache</span>
+                    <span class="admin-stat-value">{{ diagnostics.runtimeRoot }}</span>
+                </article>
+                <article class="admin-stat">
+                    <span class="admin-stat-label">Last refresh</span>
+                    <span class="admin-stat-value">{{ diagnostics.lastRefreshCompletedAt or 'Not yet refreshed' }}</span>
+                </article>
+                <article class="admin-stat">
+                    <span class="admin-stat-label">Tracked blobs</span>
+                    <span class="admin-stat-value">{{ diagnostics.lastRefreshBlobCount }}</span>
+                </article>
+                <article class="admin-stat">
+                    <span class="admin-stat-label">Last error</span>
+                    <span class="admin-stat-value">{{ diagnostics.lastError or 'None' }}</span>
+                </article>
+            </div>
+
+            <form class="admin-form" method="get">
+                <input type="hidden" name="token" value="{{ token_value }}">
+                <button class="utility-button secondary-button" type="submit">Refresh</button>
+            </form>
+
+            <pre class="admin-json">{{ diagnostics | tojson(indent=2) }}</pre>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>

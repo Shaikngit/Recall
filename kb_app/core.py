@@ -611,7 +611,6 @@ def get_content_library_status() -> dict[str, object]:
         "storageBackend": "blob" if CONTENT_STORE.enabled else "local",
         "blobAccountUrl": CONTENT_STORE.account_url if CONTENT_STORE.enabled else "",
         "blobContainer": CONTENT_STORE.container_name if CONTENT_STORE.enabled else "",
-        "storageDiagnostics": CONTENT_STORE.diagnostics(),
         "roots": [],
         "missingRootCount": 0,
         "missingNoteCount": 0,
@@ -1311,7 +1310,6 @@ def app_status(ai_helper: object | None = None) -> dict[str, object]:
         "storageBackend": "blob" if CONTENT_STORE.enabled else "local",
         "blobAccountUrl": CONTENT_STORE.account_url if CONTENT_STORE.enabled else "",
         "blobContainer": CONTENT_STORE.container_name if CONTENT_STORE.enabled else "",
-        "storageDiagnostics": CONTENT_STORE.diagnostics(),
         "aiEnabled": ai_enabled,
         "aiRequired": True,
         "aiProvider": getattr(ai_helper, "provider", "") if ai_helper else "",
@@ -1356,6 +1354,11 @@ def sync_content_write(path: Path) -> None:
 
 def sync_content_delete(path: Path) -> None:
     CONTENT_STORE.delete_file(path)
+
+
+def get_storage_diagnostics() -> dict[str, object]:
+    initialize_content_root()
+    return CONTENT_STORE.diagnostics()
 
 
 def relative_note_path(path: Path) -> str:
