@@ -19,6 +19,12 @@ param appServiceSkuName string = 'B1'
 @description('Instance count for the App Service Plan.')
 param appServiceWorkerCount int = 1
 
+@description('Optional existing App Service Plan name to reuse instead of creating a new plan.')
+param existingAppServicePlanName string = ''
+
+@description('Optional existing App Service app name to reuse instead of creating a new web app.')
+param existingWebAppName string = ''
+
 @allowed([
   'existing'
   'new'
@@ -48,13 +54,99 @@ param assignOpenAIRole bool = true
 @description('Linux path under /home used for persistent knowledge storage in App Service.')
 param contentMountPath string = '/home/mykb-content'
 
+@description('Enable Blob-backed content mode for the hosted app.')
+param enableBlobContent bool = false
+
+@description('Existing storage account name used for Blob-backed content. Required when enableBlobContent is true.')
+param blobStorageAccountName string = ''
+
+@description('Resource group containing the existing storage account used for Blob-backed content.')
+param blobStorageResourceGroupName string = resourceGroup().name
+
+@description('Blob container name used for hosted knowledge content.')
+param blobContainerName string = 'mykb-content'
+
+@description('Local cache root used by the Blob sync layer inside App Service.')
+param blobCacheRoot string = '/tmp/mykb-content-cache'
+
+@minValue(5)
+@description('Refresh interval in seconds for Blob cache synchronization.')
+param blobRefreshSeconds int = 30
+
+@description('Optional bootstrap root uploaded to Blob on first startup when the Blob container is empty.')
+param blobBootstrapRoot string = ''
+
+@description('Enable private networking between the App Service and the Blob storage account. Requires an existing VNet and storage account.')
+param enableBlobPrivateNetworking bool = false
+
+@description('Existing virtual network name used for App Service VNet integration and the storage private endpoint. Required when enableBlobPrivateNetworking is true.')
+param existingVirtualNetworkName string = ''
+
+@description('Resource group containing the existing virtual network used for Blob private networking.')
+param existingVirtualNetworkResourceGroupName string = resourceGroup().name
+
+@description('Name of the delegated subnet used for App Service regional VNet integration.')
+param appServiceIntegrationSubnetName string = 'appsvc-integration-subnet'
+
+@description('Delegation name to preserve on the App Service integration subnet when reusing an existing VNet.')
+param appServiceDelegationName string = 'appServiceDelegation'
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+@description('Private endpoint network policies setting to preserve on the App Service integration subnet.')
+param appServiceIntegrationPrivateEndpointNetworkPolicies string = 'Enabled'
+
+@description('CIDR prefix for the App Service integration subnet.')
+param appServiceIntegrationSubnetPrefix string = '10.0.1.0/24'
+
+@description('Name of the subnet used for the Blob private endpoint.')
+param storagePrivateEndpointSubnetName string = 'storage-private-endpoint-subnet'
+
+@description('CIDR prefix for the storage private endpoint subnet.')
+param storagePrivateEndpointSubnetPrefix string = '10.0.2.0/24'
+
+@description('Optional network security group resource ID to preserve on the storage private endpoint subnet.')
+param storagePrivateEndpointSubnetNetworkSecurityGroupResourceId string = ''
+
+@description('Optional private endpoint name. Leave blank to derive a name from the environment.')
+param blobPrivateEndpointName string = ''
+
+@description('Private DNS zone used for Azure Blob private endpoints.')
+param blobPrivateDnsZoneName string = 'privatelink.blob.${environment().suffixes.storage}'
+
+@description('Private DNS zone config name attached to the Blob private endpoint DNS zone group.')
+param blobPrivateDnsZoneConfigName string = 'blob'
+
+@description('Virtual network link name for the Blob private DNS zone.')
+param blobPrivateDnsZoneVnetLinkName string = 'mykb-blob-dns-link'
+
+@description('Resolution policy to preserve on the Blob private DNS zone virtual network link.')
+param blobPrivateDnsZoneResolutionPolicy string = 'Default'
+
+@description('Private DNS zone group name attached to the Blob private endpoint.')
+param blobPrivateDnsZoneGroupName string = 'default'
+
+@description('Private link service connection name for the Blob private endpoint.')
+param blobPrivateEndpointConnectionName string = ''
+
 var normalizedEnvironmentName = toLower(replace(environmentName, '-', ''))
 var uniqueSuffix = take(uniqueString(subscription().subscriptionId, resourceGroup().id, environmentName), 6)
 var createNewOpenAI = openAIMode == 'new'
+var useBlobContent = enableBlobContent
+var useBlobPrivateNetworking = enableBlobPrivateNetworking
+var useExistingAppServicePlan = !empty(existingAppServicePlanName)
+var useExistingWebApp = !empty(existingWebAppName)
 
-var appServicePlanName = take('asp-${normalizedEnvironmentName}-${uniqueSuffix}', 40)
-var webAppName = take('app-${normalizedEnvironmentName}-${uniqueSuffix}', 60)
+var appServicePlanName = useExistingAppServicePlan ? existingAppServicePlanName : take('asp-${normalizedEnvironmentName}-${uniqueSuffix}', 40)
+var webAppName = useExistingWebApp ? existingWebAppName : take('app-${normalizedEnvironmentName}-${uniqueSuffix}', 60)
 var derivedOpenAIAccountName = take('oai${normalizedEnvironmentName}${uniqueSuffix}', 64)
+var derivedBlobPrivateEndpointName = take('pe-${normalizedEnvironmentName}-blob', 80)
+var effectiveBlobPrivateEndpointName = empty(blobPrivateEndpointName) ? derivedBlobPrivateEndpointName : blobPrivateEndpointName
+var effectiveBlobPrivateEndpointConnectionName = empty(blobPrivateEndpointConnectionName) ? '${effectiveBlobPrivateEndpointName}-blob' : blobPrivateEndpointConnectionName
+var blobAccountUrl = 'https://${blobStorageAccountName}.blob.${environment().suffixes.storage}'
+var existingVirtualNetworkResourceId = resourceId(existingVirtualNetworkResourceGroupName, 'Microsoft.Network/virtualNetworks', existingVirtualNetworkName)
 var effectiveOpenAIAccountName = createNewOpenAI
   ? (empty(openAINewAccountName) ? derivedOpenAIAccountName : openAINewAccountName)
   : split(openAIResourceId, '/')[8]
@@ -63,8 +155,70 @@ var openAIRoleDefinitionId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 )
+var webAppResourceId = resourceId('Microsoft.Web/sites', webAppName)
+var webAppReference = reference(webAppResourceId, '2025-03-01', 'full')
+var webAppPrincipalId = useExistingWebApp ? webAppReference.identity.principalId : webApp!.identity.principalId!
+var webAppDefaultHostName = useExistingWebApp ? webAppReference.properties.defaultHostName : webApp!.properties.defaultHostName
+var commonAppSettings = {
+  ENABLE_ORYX_BUILD: 'true'
+  PYTHONUNBUFFERED: '1'
+  SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
+}
+var filesystemContentAppSettings = useBlobContent ? {} : {
+  MYKB_CONTENT_ROOT: contentMountPath
+}
+var blobContentAppSettings = useBlobContent ? {
+  MYKB_BLOB_ACCOUNT_URL: blobAccountUrl
+  MYKB_BLOB_CACHE_ROOT: blobCacheRoot
+  MYKB_BLOB_CONTAINER: blobContainerName
+  MYKB_BLOB_REFRESH_SECONDS: string(blobRefreshSeconds)
+} : {}
+var blobBootstrapAppSettings = useBlobContent && !empty(blobBootstrapRoot) ? {
+  MYKB_BLOB_BOOTSTRAP_ROOT: blobBootstrapRoot
+} : {}
+var blobNetworkingAppSettings = useBlobPrivateNetworking ? {
+  WEBSITE_DNS_SERVER: '168.63.129.16'
+  WEBSITE_VNET_ROUTE_ALL: '1'
+} : {}
+var existingOpenAIAppSettings = union(commonAppSettings, filesystemContentAppSettings, blobContentAppSettings, blobBootstrapAppSettings, blobNetworkingAppSettings, {
+  AZURE_OPENAI_DEPLOYMENT: openAIDeploymentName
+  AZURE_OPENAI_ENDPOINT: reference(openAIResourceId, '2025-06-01').endpoint
+})
+var newOpenAIAppSettings = union(commonAppSettings, filesystemContentAppSettings, blobContentAppSettings, blobBootstrapAppSettings, blobNetworkingAppSettings, {
+  AZURE_OPENAI_DEPLOYMENT: openAIDeploymentName
+  #disable-next-line use-resource-symbol-reference
+  AZURE_OPENAI_ENDPOINT: reference(newOpenAI.id, '2025-06-01').endpoint
+})
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2025-03-01' = {
+resource blobStorageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = if (useBlobContent || useBlobPrivateNetworking) {
+  scope: resourceGroup(blobStorageResourceGroupName)
+  name: blobStorageAccountName
+}
+
+resource existingAppServicePlan 'Microsoft.Web/serverfarms@2025-03-01' existing = if (useExistingAppServicePlan) {
+  name: appServicePlanName
+}
+
+resource existingWebApp 'Microsoft.Web/sites@2025-03-01' existing = if (useExistingWebApp) {
+  name: webAppName
+}
+
+module blobNetworkSubnets 'modules/blob-network-subnets.bicep' = if (useBlobPrivateNetworking) {
+  name: 'blob-network-subnets'
+  scope: resourceGroup(existingVirtualNetworkResourceGroupName)
+  params: {
+    appServiceDelegationName: appServiceDelegationName
+    appServiceIntegrationSubnetName: appServiceIntegrationSubnetName
+    appServiceIntegrationPrivateEndpointNetworkPolicies: appServiceIntegrationPrivateEndpointNetworkPolicies
+    appServiceIntegrationSubnetPrefix: appServiceIntegrationSubnetPrefix
+    storagePrivateEndpointSubnetNetworkSecurityGroupResourceId: storagePrivateEndpointSubnetNetworkSecurityGroupResourceId
+    storagePrivateEndpointSubnetName: storagePrivateEndpointSubnetName
+    storagePrivateEndpointSubnetPrefix: storagePrivateEndpointSubnetPrefix
+    virtualNetworkName: existingVirtualNetworkName
+  }
+}
+
+resource appServicePlan 'Microsoft.Web/serverfarms@2025-03-01' = if (!useExistingAppServicePlan) {
   name: appServicePlanName
   location: location
   kind: 'linux'
@@ -107,7 +261,7 @@ resource newOpenAIDeployment 'Microsoft.CognitiveServices/accounts/deployments@2
   }
 }
 
-resource webApp 'Microsoft.Web/sites@2025-03-01' = {
+resource webApp 'Microsoft.Web/sites@2025-03-01' = if (!useExistingWebApp) {
   name: webAppName
   location: location
   kind: 'app,linux'
@@ -118,7 +272,7 @@ resource webApp 'Microsoft.Web/sites@2025-03-01' = {
     'azd-service-name': 'web'
   }
   properties: {
-    serverFarmId: appServicePlan.id
+    serverFarmId: useExistingAppServicePlan ? existingAppServicePlan.id : appServicePlan.id
     clientAffinityEnabled: false
     httpsOnly: true
     publicNetworkAccess: 'Enabled'
@@ -134,34 +288,111 @@ resource webApp 'Microsoft.Web/sites@2025-03-01' = {
   }
 }
 
-resource webAppAppSettingsExisting 'Microsoft.Web/sites/config@2024-04-01' = if (!createNewOpenAI) {
+resource webAppAppSettingsExistingExistingWebApp 'Microsoft.Web/sites/config@2024-04-01' = if (!createNewOpenAI && useExistingWebApp) {
+  parent: existingWebApp
+  name: 'appsettings'
+  properties: existingOpenAIAppSettings
+}
+
+resource webAppAppSettingsExistingNewWebApp 'Microsoft.Web/sites/config@2024-04-01' = if (!createNewOpenAI && !useExistingWebApp) {
   parent: webApp
   name: 'appsettings'
+  properties: existingOpenAIAppSettings
+}
+
+resource webAppAppSettingsNewExistingWebApp 'Microsoft.Web/sites/config@2024-04-01' = if (createNewOpenAI && useExistingWebApp) {
+  parent: existingWebApp
+  name: 'appsettings'
+  properties: newOpenAIAppSettings
+}
+
+resource webAppAppSettingsNewNewWebApp 'Microsoft.Web/sites/config@2024-04-01' = if (createNewOpenAI && !useExistingWebApp) {
+  parent: webApp
+  name: 'appsettings'
+  properties: newOpenAIAppSettings
+}
+
+resource webAppVnetIntegrationExistingWebApp 'Microsoft.Web/sites/networkConfig@2024-04-01' = if (useBlobPrivateNetworking && useExistingWebApp) {
+  parent: existingWebApp
+  name: 'virtualNetwork'
   properties: {
-    AZURE_OPENAI_DEPLOYMENT: openAIDeploymentName
-    AZURE_OPENAI_ENDPOINT: reference(openAIResourceId, '2025-06-01').endpoint
-    ENABLE_ORYX_BUILD: 'true'
-    MYKB_CONTENT_ROOT: contentMountPath
-    PYTHONUNBUFFERED: '1'
-    SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
+    subnetResourceId: blobNetworkSubnets!.outputs.appServiceIntegrationSubnetId
+    swiftSupported: true
   }
 }
 
-resource webAppAppSettingsNew 'Microsoft.Web/sites/config@2024-04-01' = if (createNewOpenAI) {
+resource webAppVnetIntegrationNewWebApp 'Microsoft.Web/sites/networkConfig@2024-04-01' = if (useBlobPrivateNetworking && !useExistingWebApp) {
   parent: webApp
-  name: 'appsettings'
+  name: 'virtualNetwork'
   properties: {
-    AZURE_OPENAI_DEPLOYMENT: openAIDeploymentName
-    #disable-next-line use-resource-symbol-reference
-    AZURE_OPENAI_ENDPOINT: reference(newOpenAI.id, '2025-06-01').endpoint
-    ENABLE_ORYX_BUILD: 'true'
-    MYKB_CONTENT_ROOT: contentMountPath
-    PYTHONUNBUFFERED: '1'
-    SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
+    subnetResourceId: blobNetworkSubnets!.outputs.appServiceIntegrationSubnetId
+    swiftSupported: true
   }
 }
 
-resource ftpPublishingPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2025-03-01' = {
+resource blobPrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (useBlobPrivateNetworking) {
+  name: blobPrivateDnsZoneName
+  location: 'global'
+}
+
+resource blobPrivateDnsZoneVnetLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = if (useBlobPrivateNetworking) {
+  parent: blobPrivateDnsZone
+  name: blobPrivateDnsZoneVnetLinkName
+  location: 'global'
+  properties: {
+    registrationEnabled: false
+    resolutionPolicy: blobPrivateDnsZoneResolutionPolicy
+    virtualNetwork: {
+      id: existingVirtualNetworkResourceId
+    }
+  }
+}
+
+resource blobPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = if (useBlobPrivateNetworking) {
+  name: effectiveBlobPrivateEndpointName
+  location: location
+  properties: {
+    privateLinkServiceConnections: [
+      {
+        name: effectiveBlobPrivateEndpointConnectionName
+        properties: {
+          groupIds: [
+            'blob'
+          ]
+          privateLinkServiceId: blobStorageAccount.id
+        }
+      }
+    ]
+    subnet: {
+      id: blobNetworkSubnets!.outputs.storagePrivateEndpointSubnetId
+    }
+  }
+}
+
+resource blobPrivateEndpointDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-05-01' = if (useBlobPrivateNetworking) {
+  parent: blobPrivateEndpoint
+  name: blobPrivateDnsZoneGroupName
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: blobPrivateDnsZoneConfigName
+        properties: {
+          privateDnsZoneId: blobPrivateDnsZone.id
+        }
+      }
+    ]
+  }
+}
+
+resource ftpPublishingPolicyExistingWebApp 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2025-03-01' = if (useExistingWebApp) {
+  parent: existingWebApp
+  name: 'ftp'
+  properties: {
+    allow: false
+  }
+}
+
+resource ftpPublishingPolicyNewWebApp 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2025-03-01' = if (!useExistingWebApp) {
   parent: webApp
   name: 'ftp'
   properties: {
@@ -169,7 +400,15 @@ resource ftpPublishingPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPoli
   }
 }
 
-resource scmPublishingPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2025-03-01' = {
+resource scmPublishingPolicyExistingWebApp 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2025-03-01' = if (useExistingWebApp) {
+  parent: existingWebApp
+  name: 'scm'
+  properties: {
+    allow: false
+  }
+}
+
+resource scmPublishingPolicyNewWebApp 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2025-03-01' = if (!useExistingWebApp) {
   parent: webApp
   name: 'scm'
   properties: {
@@ -182,16 +421,18 @@ module openAIRoleAssignment 'modules/openai-role-assignment.bicep' = if (assignO
   scope: resourceGroup(effectiveOpenAIResourceGroupName)
   params: {
     openAIAccountName: effectiveOpenAIAccountName
-    principalId: webApp.identity.principalId!
-    principalNameSeed: webApp.name
+    principalId: webAppPrincipalId
+    principalNameSeed: webAppName
     roleDefinitionId: openAIRoleDefinitionId
   }
 }
 
-output appServicePlanName string = appServicePlan.name
+output appServicePlanName string = appServicePlanName
+output blobPrivateEndpointName string = useBlobPrivateNetworking ? blobPrivateEndpoint.name : ''
+output blobPrivateDnsZoneName string = useBlobPrivateNetworking ? blobPrivateDnsZone.name : ''
 output openAIAccountName string = effectiveOpenAIAccountName
 output openAIMode string = openAIMode
 output openAIRoleAssignmentEnabled bool = assignOpenAIRole
-output webAppPrincipalId string = webApp.identity.principalId!
-output webAppName string = webApp.name
-output webAppUrl string = 'https://${webApp.properties.defaultHostName}'
+output webAppPrincipalId string = webAppPrincipalId
+output webAppName string = webAppName
+output webAppUrl string = 'https://${webAppDefaultHostName}'

@@ -8,6 +8,18 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
+    "existingAppServicePlanName": {
+      "value": "${AZURE_RECALL_EXISTING_APP_SERVICE_PLAN_NAME}"
+    },
+    "existingWebAppName": {
+      "value": "${AZURE_RECALL_EXISTING_WEB_APP_NAME}"
+    },
+    "appServiceDelegationName": {
+      "value": "${AZURE_RECALL_APPSVC_DELEGATION_NAME}"
+    },
+    "appServiceIntegrationPrivateEndpointNetworkPolicies": {
+      "value": "${AZURE_RECALL_APPSVC_INTEGRATION_PRIVATE_ENDPOINT_POLICIES}"
+    },
     "openAIMode": {
       "value": "${AZURE_OPENAI_MODE}"
     },
@@ -28,6 +40,72 @@
     },
     "assignOpenAIRole": {
       "value": "${AZURE_OPENAI_ASSIGN_ROLE}"
+    },
+    "enableBlobContent": {
+      "value": "${AZURE_RECALL_ENABLE_BLOB_CONTENT}"
+    },
+    "blobStorageAccountName": {
+      "value": "${AZURE_RECALL_BLOB_STORAGE_ACCOUNT_NAME}"
+    },
+    "blobStorageResourceGroupName": {
+      "value": "${AZURE_RECALL_BLOB_STORAGE_RESOURCE_GROUP}"
+    },
+    "blobContainerName": {
+      "value": "${AZURE_RECALL_BLOB_CONTAINER}"
+    },
+    "blobCacheRoot": {
+      "value": "${AZURE_RECALL_BLOB_CACHE_ROOT}"
+    },
+    "blobRefreshSeconds": {
+      "value": "${AZURE_RECALL_BLOB_REFRESH_SECONDS}"
+    },
+    "blobBootstrapRoot": {
+      "value": "${AZURE_RECALL_BLOB_BOOTSTRAP_ROOT}"
+    },
+    "enableBlobPrivateNetworking": {
+      "value": "${AZURE_RECALL_ENABLE_BLOB_PRIVATE_NETWORKING}"
+    },
+    "existingVirtualNetworkName": {
+      "value": "${AZURE_RECALL_VNET_NAME}"
+    },
+    "existingVirtualNetworkResourceGroupName": {
+      "value": "${AZURE_RECALL_VNET_RESOURCE_GROUP}"
+    },
+    "appServiceIntegrationSubnetName": {
+      "value": "${AZURE_RECALL_APPSVC_INTEGRATION_SUBNET_NAME}"
+    },
+    "appServiceIntegrationSubnetPrefix": {
+      "value": "${AZURE_RECALL_APPSVC_INTEGRATION_SUBNET_PREFIX}"
+    },
+    "storagePrivateEndpointSubnetName": {
+      "value": "${AZURE_RECALL_STORAGE_PE_SUBNET_NAME}"
+    },
+    "storagePrivateEndpointSubnetPrefix": {
+      "value": "${AZURE_RECALL_STORAGE_PE_SUBNET_PREFIX}"
+    },
+    "storagePrivateEndpointSubnetNetworkSecurityGroupResourceId": {
+      "value": "${AZURE_RECALL_STORAGE_PE_SUBNET_NSG_ID}"
+    },
+    "blobPrivateEndpointName": {
+      "value": "${AZURE_RECALL_STORAGE_PRIVATE_ENDPOINT_NAME}"
+    },
+    "blobPrivateEndpointConnectionName": {
+      "value": "${AZURE_RECALL_STORAGE_PRIVATE_ENDPOINT_CONNECTION_NAME}"
+    },
+    "blobPrivateDnsZoneName": {
+      "value": "${AZURE_RECALL_BLOB_PRIVATE_DNS_ZONE_NAME}"
+    },
+    "blobPrivateDnsZoneConfigName": {
+      "value": "${AZURE_RECALL_BLOB_PRIVATE_DNS_ZONE_CONFIG_NAME}"
+    },
+    "blobPrivateDnsZoneVnetLinkName": {
+      "value": "${AZURE_RECALL_BLOB_PRIVATE_DNS_LINK_NAME}"
+    },
+    "blobPrivateDnsZoneResolutionPolicy": {
+      "value": "${AZURE_RECALL_BLOB_PRIVATE_DNS_RESOLUTION_POLICY}"
+    },
+    "blobPrivateDnsZoneGroupName": {
+      "value": "${AZURE_RECALL_BLOB_PRIVATE_DNS_ZONE_GROUP_NAME}"
     }
   }
 }

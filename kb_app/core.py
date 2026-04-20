@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from kb_app.blob_content import BlobContentStore
 APP_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_AZURE_FILES_CONTENT_ROOT = Path('/mounts/mykb-content')
 CONTENT_STORE = BlobContentStore.from_environment(APP_ROOT)
+logger = logging.getLogger(__name__)
 
 
 def resolve_content_root() -> Path:
@@ -604,6 +606,7 @@ def note_inventory(base_root: Path) -> dict[str, set[str]]:
 
 def get_content_library_status() -> dict[str, object]:
     initialize_content_root()
+    diagnostics = CONTENT_STORE.diagnostics()
     return {
         "hostedMode": CONTENT_STORE.enabled or CONTENT_ROOT != APP_ROOT,
         "repoRoot": APP_ROOT.as_posix(),
@@ -611,6 +614,8 @@ def get_content_library_status() -> dict[str, object]:
         "storageBackend": "blob" if CONTENT_STORE.enabled else "local",
         "blobAccountUrl": CONTENT_STORE.account_url if CONTENT_STORE.enabled else "",
         "blobContainer": CONTENT_STORE.container_name if CONTENT_STORE.enabled else "",
+        "storageHealthy": not bool(diagnostics.get("lastError")),
+        "storageWarning": diagnostics.get("lastError", ""),
         "roots": [],
         "missingRootCount": 0,
         "missingNoteCount": 0,
@@ -1303,6 +1308,7 @@ def rewrite_inbox_file(inbox_path: Path, entries: list[InboxEntry]) -> None:
 
 def app_status(ai_helper: object | None = None) -> dict[str, object]:
     ai_enabled = bool(ai_helper and getattr(ai_helper, "is_configured", False))
+    diagnostics = CONTENT_STORE.diagnostics()
     return {
         "repoRoot": APP_ROOT.as_posix(),
         "contentRoot": CONTENT_ROOT.as_posix(),
@@ -1310,6 +1316,8 @@ def app_status(ai_helper: object | None = None) -> dict[str, object]:
         "storageBackend": "blob" if CONTENT_STORE.enabled else "local",
         "blobAccountUrl": CONTENT_STORE.account_url if CONTENT_STORE.enabled else "",
         "blobContainer": CONTENT_STORE.container_name if CONTENT_STORE.enabled else "",
+        "storageHealthy": not bool(diagnostics.get("lastError")),
+        "storageWarning": diagnostics.get("lastError", ""),
         "aiEnabled": ai_enabled,
         "aiRequired": True,
         "aiProvider": getattr(ai_helper, "provider", "") if ai_helper else "",
@@ -1334,12 +1342,17 @@ def dump_results_for_prompt(results: list[SearchResult], limit: int = 6) -> str:
     return json.dumps(payload, indent=2)
 
 
-def initialize_content_root() -> Path:
+def initialize_content_root(strict: bool = False) -> Path:
     CONTENT_ROOT.mkdir(parents=True, exist_ok=True)
     INBOX_DIR.mkdir(parents=True, exist_ok=True)
     KB_DIR.mkdir(parents=True, exist_ok=True)
     QUICK_TIPS_DIR.mkdir(parents=True, exist_ok=True)
-    CONTENT_STORE.ensure_ready()
+    try:
+        CONTENT_STORE.ensure_ready()
+    except Exception as error:
+        logger.warning("Content store unavailable; continuing with local cache: %s", error)
+        if strict:
+            raise
     return CONTENT_ROOT
 
 

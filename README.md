@@ -85,6 +85,8 @@ MYKB_BLOB_CACHE_ROOT=/tmp/mykb-content-cache
 MYKB_BLOB_REFRESH_SECONDS=30
 ```
 
+If the storage account has public network access disabled, also keep the App Service on a VNet-integrated plan such as `B1` or higher and deploy the private networking resources from [infra/main.bicep](c:/ANPWikiBot/MyKB/.public-export/Recall/infra/main.bicep).
+
 Optional cutover setting for the first startup only:
 
 ```text
@@ -98,6 +100,42 @@ RBAC required on the storage account for the App Service managed identity:
 - `Storage Blob Data Contributor`
 
 Keep `MYKB_CONTENT_ROOT` unset when Blob mode is active unless you are intentionally using it as a temporary bootstrap source during migration.
+
+### Blob Private Networking
+
+The Bicep template can also capture the production-safe Blob networking path so future `azd provision` runs do not remove it. When enabled, the template will:
+
+- create or reconcile an App Service VNet integration subnet delegated to `Microsoft.Web/serverFarms`
+- create or reconcile a subnet for the storage private endpoint with private endpoint network policies disabled
+- connect the App Service to the integration subnet
+- create the Blob private endpoint
+- create the `privatelink.blob.core.windows.net` private DNS zone and link it to the VNet
+- set `WEBSITE_DNS_SERVER=168.63.129.16` and `WEBSITE_VNET_ROUTE_ALL=1` on the web app
+
+Set these azd environment values before `azd provision` when you want the hosted app to use Blob plus private networking:
+
+```powershell
+azd env set AZURE_RECALL_ENABLE_BLOB_CONTENT true
+azd env set AZURE_RECALL_BLOB_STORAGE_ACCOUNT_NAME <storage-account-name>
+azd env set AZURE_RECALL_BLOB_STORAGE_RESOURCE_GROUP <storage-resource-group>
+azd env set AZURE_RECALL_BLOB_CONTAINER mykb-content
+azd env set AZURE_RECALL_BLOB_CACHE_ROOT /tmp/mykb-content-cache
+azd env set AZURE_RECALL_BLOB_REFRESH_SECONDS 30
+azd env set AZURE_RECALL_BLOB_BOOTSTRAP_ROOT ""
+azd env set AZURE_RECALL_ENABLE_BLOB_PRIVATE_NETWORKING true
+azd env set AZURE_RECALL_VNET_NAME <existing-vnet-name>
+azd env set AZURE_RECALL_VNET_RESOURCE_GROUP <vnet-resource-group>
+azd env set AZURE_RECALL_APPSVC_INTEGRATION_SUBNET_NAME appsvc-integration-subnet
+azd env set AZURE_RECALL_APPSVC_INTEGRATION_SUBNET_PREFIX 10.0.1.0/24
+azd env set AZURE_RECALL_STORAGE_PE_SUBNET_NAME storage-private-endpoint-subnet
+azd env set AZURE_RECALL_STORAGE_PE_SUBNET_PREFIX 10.0.2.0/24
+azd env set AZURE_RECALL_STORAGE_PRIVATE_ENDPOINT_NAME <private-endpoint-name>
+azd env set AZURE_RECALL_BLOB_PRIVATE_DNS_ZONE_NAME privatelink.blob.core.windows.net
+azd env set AZURE_RECALL_BLOB_PRIVATE_DNS_LINK_NAME mykb-blob-dns-link
+azd env set AZURE_RECALL_BLOB_PRIVATE_DNS_ZONE_GROUP_NAME default
+```
+
+If you only want Blob mode without private networking, leave `AZURE_RECALL_ENABLE_BLOB_PRIVATE_NETWORKING=false` and skip the VNet-related values.
 
 ### Deployment Modes
 

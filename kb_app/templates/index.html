@@ -33,6 +33,16 @@
         <section id="chat-stage" class="chat-stage empty-mode">
             <div id="empty-state" class="empty-state hidden"></div>
 
+            <section id="storage-warning-banner" class="surface utility-surface floating-panel-card{% if status.storageHealthy %} hidden{% endif %}">
+                <div class="surface-header compact-header">
+                    <div>
+                        <p class="surface-kicker">Storage Warning</p>
+                        <h2>Hosted Storage Needs Attention</h2>
+                    </div>
+                </div>
+                <p class="utility-status">Blob-backed note sync is unavailable right now. The app is using its local cache, so recent content may be stale until Azure storage access is restored.</p>
+            </section>
+
             <section id="ai-onboarding-banner" class="surface utility-surface floating-panel-card{% if status.aiEnabled %} hidden{% endif %}">
                 <div class="surface-header compact-header">
                     <div>

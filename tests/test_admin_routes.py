@@ -1,9 +1,51 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from kb_app.app import create_app
+from kb_app import core
+
+
+class FailingContentStore:
+    def __init__(self, runtime_root: Path) -> None:
+        self.enabled = True
+        self.account_url = "https://example.blob.core.windows.net"
+        self.container_name = "mykb-content"
+        self.runtime_root = runtime_root
+
+    def ensure_ready(self, force_refresh: bool = False) -> None:
+        raise RuntimeError("refresh cache: AuthorizationFailure")
+
+    def upload_file(self, local_path: Path) -> None:
+        return None
+
+    def delete_file(self, local_path: Path) -> None:
+        return None
+
+    def diagnostics(self) -> dict[str, object]:
+        return {
+            "enabled": True,
+            "accountUrl": self.account_url,
+            "container": self.container_name,
+            "runtimeRoot": self.runtime_root.as_posix(),
+            "bootstrapRoot": "",
+            "refreshSeconds": 30,
+            "containerChecked": False,
+            "bootstrapChecked": False,
+            "lastRefreshStartedAt": "",
+            "lastRefreshCompletedAt": "",
+            "lastRefreshBlobCount": 0,
+            "lastRefreshDownloadCount": 0,
+            "lastRefreshDeleteCount": 0,
+            "lastBootstrapFileCount": 0,
+            "lastUploadBlob": "",
+            "lastDeleteBlob": "",
+            "lastError": "refresh cache: AuthorizationFailure",
+        }
 
 
 class AdminRoutesTests(unittest.TestCase):
@@ -45,3 +87,29 @@ class AdminRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Storage Diagnostics", response.data)
         self.assertIn(b"Tracked blobs", response.data)
+
+    def test_homepage_and_recent_survive_blob_auth_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            failing_store = FailingContentStore(runtime_root)
+
+            with patch.object(core, "CONTENT_STORE", failing_store), \
+                 patch.object(core, "CONTENT_ROOT", runtime_root), \
+                 patch.object(core, "INBOX_DIR", runtime_root / "Inbox"), \
+                 patch.object(core, "KB_DIR", runtime_root / "KB"), \
+                 patch.object(core, "QUICK_TIPS_DIR", runtime_root / "Quick Tips"):
+                app = create_app()
+                client = app.test_client()
+
+                homepage_response = client.get("/")
+                recent_response = client.get("/api/recent")
+                status_response = client.get("/api/content/status")
+
+        self.assertEqual(homepage_response.status_code, 200)
+        self.assertEqual(recent_response.status_code, 200)
+        self.assertEqual(recent_response.get_json(), [])
+        self.assertEqual(status_response.status_code, 200)
+        payload = status_response.get_json()
+        assert payload is not None
+        self.assertFalse(payload["storageHealthy"])
+        self.assertIn("AuthorizationFailure", payload["storageWarning"])
