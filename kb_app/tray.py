@@ -62,7 +62,7 @@ HOTKEY_DASHBOARD = "<ctrl>+<right>"
 HOTKEY_VOICE = "<ctrl>+<left>"
 
 _ICM_URL_TEMPLATE = "https://portal.microsofticm.com/imp/v3/incidents/details/{}/home"
-_ICM_NUMBER_PATTERN = re.compile(r"^\s*(\d{9,14})\s*$")
+_ICM_NUMBER_PATTERN = re.compile(r"^\s*(7\d{8}|5\d{13}|2\d{13})\s*$")
 
 _APP_VERSION = "1.1.0"
 _STARTUP_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
