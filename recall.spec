@@ -3,10 +3,14 @@
 
 import os
 import customtkinter
+import winotify
+import speech_recognition
 
 block_cipher = None
 
 ctk_path = os.path.dirname(customtkinter.__file__)
+winotify_path = os.path.dirname(winotify.__file__)
+sr_path = os.path.dirname(speech_recognition.__file__)
 
 a = Analysis(
     ['kb_app/tray.py'],
@@ -20,6 +24,10 @@ a = Analysis(
         ('.recall-config.json', '.'),
         # CustomTkinter assets (themes, fonts, images)
         (ctk_path, 'customtkinter'),
+        # Winotify assets (XML toast templates)
+        (winotify_path, 'winotify'),
+        # SpeechRecognition assets (bundled FLAC converter)
+        (sr_path, 'speech_recognition'),
     ],
     hiddenimports=[
         'kb_app',
