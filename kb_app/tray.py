@@ -75,9 +75,18 @@ CAPTURE_TEMPLATES: dict[str, str] = {
     "Meeting": "Topic:\nService:\nDecision:\nFollow-up:\nNotes:",
 }
 
-# Brand colours
+# Brand colours (modern dark theme matching webapp)
 _GREEN = "#1e6f5c"
+_ACCENT = "#2dd4a8"
+_BG_DARK = "#0f0f14"
+_SURFACE = "#1a1a24"
+_SURFACE_LIGHT = "#24243a"
+_BORDER = "#2a2a3e"
+_TEXT = "#e8e8f0"
+_MUTED = "#8888a0"
 _BG_LIGHT = "#f8f5ef"
+_USER_BUBBLE = ("#1e3a5c", "#1e3a5c")
+_ASSIST_BUBBLE = ("#1a2a1f", "#1a2a1f")
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +154,7 @@ def _show_toast(title: str, body: str) -> None:
 # ---------------------------------------------------------------------------
 # Appearance (follows Windows light / dark automatically)
 # ---------------------------------------------------------------------------
-ctk.set_appearance_mode("system")
+ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("green")
 
 # ---------------------------------------------------------------------------
@@ -205,56 +214,75 @@ class AskWindow:
     def _build(self) -> None:
         win = ctk.CTkToplevel(self._root)
         win.title("Recall Q&A")
-        win.geometry("660x520")
+        win.geometry("680x560")
         win.attributes("-topmost", True)
         win.protocol("WM_DELETE_WINDOW", win.withdraw)
+        win.configure(fg_color=_BG_DARK)
         self._win = win
 
-        # Title
-        ctk.CTkLabel(win, text="Recall Q&A", font=ctk.CTkFont(size=16, weight="bold")).pack(
-            padx=16, pady=(14, 4), anchor="w"
-        )
+        # Title bar
+        title_bar = ctk.CTkFrame(win, fg_color=_SURFACE, corner_radius=0, height=48)
+        title_bar.pack(fill="x")
+        title_bar.pack_propagate(False)
+        ctk.CTkLabel(title_bar, text="\u2728  Recall Q&A", font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color=_TEXT).pack(padx=16, side="left")
+        ctk.CTkButton(title_bar, text="New Chat", width=80, height=30,
+                       fg_color=_SURFACE_LIGHT, hover_color=_GREEN,
+                       font=ctk.CTkFont(size=11), corner_radius=14,
+                       command=self._new_chat).pack(side="right", padx=12)
 
         # Conversation scroll area
-        self._conversation_frame = ctk.CTkScrollableFrame(win, corner_radius=8)
-        self._conversation_frame.pack(fill="both", expand=True, padx=14, pady=(4, 6))
+        self._conversation_frame = ctk.CTkScrollableFrame(
+            win, corner_radius=0, fg_color=_BG_DARK,
+            scrollbar_button_color=_SURFACE_LIGHT, scrollbar_button_hover_color=_GREEN)
+        self._conversation_frame.pack(fill="both", expand=True, padx=0, pady=0)
 
         # Welcome message
         self._append_bubble("assistant", "Ask me anything about your KB. I'll search your notes and answer.")
 
-        # Bottom controls
-        bottom = ctk.CTkFrame(win, fg_color="transparent")
-        bottom.pack(fill="x", padx=14, pady=(0, 6))
+        # Bottom input area
+        input_area = ctk.CTkFrame(win, fg_color=_SURFACE, corner_radius=0, height=70)
+        input_area.pack(fill="x", side="bottom")
+        input_area.pack_propagate(False)
 
         # Follow-up toggle
+        toggle_row = ctk.CTkFrame(input_area, fg_color="transparent")
+        toggle_row.pack(fill="x", padx=16, pady=(8, 0))
         self._followup_var = ctk.StringVar(value="off")
         self._followup_switch = ctk.CTkSwitch(
-            bottom, text="Follow-up", variable=self._followup_var,
-            onvalue="on", offvalue="off", width=48
+            toggle_row, text="Follow-up", variable=self._followup_var,
+            onvalue="on", offvalue="off", width=44, height=20,
+            font=ctk.CTkFont(size=11), text_color=_MUTED,
+            button_color=_GREEN, progress_color=_GREEN,
         )
-        self._followup_switch.pack(side="left", padx=(0, 8))
-
-        # New chat button
-        ctk.CTkButton(bottom, text="New Chat", width=80, fg_color="gray40",
-                       hover_color="gray30", command=self._new_chat).pack(side="left", padx=(0, 8))
+        self._followup_switch.pack(side="left")
 
         # Input row
-        input_frame = ctk.CTkFrame(win, fg_color="transparent")
-        input_frame.pack(fill="x", padx=14, pady=(0, 10))
+        input_row = ctk.CTkFrame(input_area, fg_color="transparent")
+        input_row.pack(fill="x", padx=16, pady=(4, 10))
 
-        self._input_entry = ctk.CTkEntry(input_frame, placeholder_text="Type your question...",
-                                          height=38, font=ctk.CTkFont(size=13))
+        self._input_entry = ctk.CTkEntry(
+            input_row, placeholder_text="Type your question\u2026",
+            height=36, font=ctk.CTkFont(size=13),
+            fg_color=_SURFACE_LIGHT, border_color=_BORDER,
+            text_color=_TEXT, placeholder_text_color=_MUTED,
+            corner_radius=18)
         self._input_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self._input_entry.bind("<Return>", lambda _e: self._on_send())
         self._input_entry.focus_set()
 
-        self._send_btn = ctk.CTkButton(input_frame, text="Send", width=70, command=self._on_send)
+        self._send_btn = ctk.CTkButton(
+            input_row, text="\u27A4", width=36, height=36,
+            fg_color=_GREEN, hover_color=_ACCENT,
+            corner_radius=18, font=ctk.CTkFont(size=16),
+            command=self._on_send)
         self._send_btn.pack(side="right")
 
         # Status
-        self._status_label = ctk.CTkLabel(win, text="Ctrl+` to toggle  |  Enter to send  |  Esc to hide",
-                                           font=ctk.CTkFont(size=11), text_color="gray50")
-        self._status_label.pack(padx=14, pady=(0, 8), anchor="w")
+        self._status_label = ctk.CTkLabel(
+            win, text="Ctrl+` toggle  \u2502  Enter send  \u2502  Esc hide",
+            font=ctk.CTkFont(size=10), text_color=_MUTED)
+        self._status_label.pack(side="bottom", padx=16, pady=(0, 4), before=input_area)
 
         win.bind("<Escape>", lambda _e: win.withdraw())
 
@@ -267,16 +295,22 @@ class AskWindow:
 
         is_user = role == "user"
         anchor = "e" if is_user else "w"
-        fg = ("#dceefb", "#1a3d5c") if is_user else ("#e8f5e9", "#1b3a26")  # (light, dark)
-        text_clr = ("#1a1a1a", "#eaeaea")
+        fg = _USER_BUBBLE if is_user else _ASSIST_BUBBLE
 
-        bubble_frame = ctk.CTkFrame(frame, corner_radius=10, fg_color=fg)
-        bubble_frame.pack(anchor=anchor, padx=(60 if is_user else 4, 4 if is_user else 60),
+        bubble_frame = ctk.CTkFrame(frame, corner_radius=16, fg_color=fg,
+                                     border_width=1, border_color=_BORDER)
+        bubble_frame.pack(anchor=anchor, padx=(60 if is_user else 8, 8 if is_user else 60),
                           pady=4, fill="x" if not is_user else "none")
 
+        # Role label
+        role_text = "You" if is_user else "\u2728 Recall"
+        ctk.CTkLabel(bubble_frame, text=role_text, font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=_ACCENT if not is_user else _MUTED,
+                     anchor="w").pack(padx=14, pady=(8, 0), anchor="w")
+
         ctk.CTkLabel(bubble_frame, text=text, wraplength=480, justify="left",
-                     font=ctk.CTkFont(size=12), text_color=text_clr,
-                     anchor="w").pack(padx=12, pady=8, anchor="w")
+                     font=ctk.CTkFont(size=12), text_color=_TEXT,
+                     anchor="w").pack(padx=14, pady=(2, 10), anchor="w")
 
         # Scroll to bottom
         self._root.after(50, lambda: frame._parent_canvas.yview_moveto(1.0))
@@ -286,15 +320,16 @@ class AskWindow:
         if not results or self._conversation_frame is None:
             return
         src_frame = ctk.CTkFrame(self._conversation_frame, fg_color="transparent")
-        src_frame.pack(anchor="w", padx=4, pady=(0, 4))
-        ctk.CTkLabel(src_frame, text="Sources:", font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color="gray50").pack(side="left", padx=(0, 6))
+        src_frame.pack(anchor="w", padx=8, pady=(0, 6))
+        ctk.CTkLabel(src_frame, text="Sources:", font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=_MUTED).pack(side="left", padx=(0, 6))
         for i, r in enumerate(results[:5], 1):
             path = r.get("path", "")
             title = r.get("title", f"Source {i}")
             btn = ctk.CTkButton(src_frame, text=title, width=0, height=24,
-                                font=ctk.CTkFont(size=11), fg_color="gray30",
-                                hover_color=_GREEN,
+                                font=ctk.CTkFont(size=10), fg_color=_SURFACE_LIGHT,
+                                hover_color=_GREEN, text_color=_ACCENT,
+                                corner_radius=12,
                                 command=partial(self._open_source_note, path, title))
             btn.pack(side="left", padx=2)
 
@@ -317,30 +352,47 @@ class AskWindow:
         threading.Thread(target=_fetch, daemon=True).start()
 
     def _show_source_dialog(self, title: str, path: str, content: str) -> None:
-        """Show a source note in a scrollable in-app dialog."""
-        popup = ctk.CTkToplevel(self._root)
+        """Show a source note in a modern in-app panel overlaying the chat window."""
+        # Use the chat window as parent if available, so it appears on top
+        parent = self._win if (self._win and self._win.winfo_exists()) else self._root
+        popup = ctk.CTkToplevel(parent)
         popup.title(f"Source: {title}")
-        popup.geometry("640x480")
+        popup.geometry("640x500")
         popup.attributes("-topmost", True)
+        popup.configure(fg_color=_BG_DARK)
+        # Ensure it stays in front of the chat window
+        popup.lift()
+        popup.focus_force()
+        popup.after(50, popup.lift)
 
         # Header
-        header = ctk.CTkFrame(popup, fg_color="transparent")
-        header.pack(fill="x", padx=16, pady=(12, 0))
-        ctk.CTkLabel(header, text=title, font=ctk.CTkFont(size=15, weight="bold"),
-                     wraplength=560, anchor="w").pack(anchor="w")
-        ctk.CTkLabel(header, text=path, font=ctk.CTkFont(size=11),
-                     text_color="gray50", anchor="w").pack(anchor="w", pady=(2, 0))
+        header = ctk.CTkFrame(popup, fg_color=_SURFACE, corner_radius=0, height=56)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        header_inner = ctk.CTkFrame(header, fg_color="transparent")
+        header_inner.pack(fill="both", expand=True, padx=16)
+        ctk.CTkLabel(header_inner, text=f"\U0001f4c4  {title}", font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=_TEXT, wraplength=480, anchor="w").pack(anchor="w", pady=(8, 0))
+        ctk.CTkLabel(header_inner, text=path, font=ctk.CTkFont(size=10),
+                     text_color=_MUTED, anchor="w").pack(anchor="w", pady=(0, 4))
 
         # Content
         textbox = ctk.CTkTextbox(popup, wrap="word",
-                                  font=ctk.CTkFont(family="Segoe UI", size=12),
-                                  corner_radius=8)
-        textbox.pack(fill="both", expand=True, padx=16, pady=(8, 8))
+                                  font=ctk.CTkFont(family="Consolas", size=12),
+                                  fg_color=_SURFACE, text_color=_TEXT,
+                                  scrollbar_button_color=_SURFACE_LIGHT,
+                                  corner_radius=0)
+        textbox.pack(fill="both", expand=True, padx=0, pady=0)
         textbox.insert("1.0", content)
         textbox.configure(state="disabled")
 
         # Close button
-        ctk.CTkButton(popup, text="Close", width=80, command=popup.destroy).pack(pady=(0, 12))
+        close_bar = ctk.CTkFrame(popup, fg_color=_SURFACE, corner_radius=0, height=44)
+        close_bar.pack(fill="x")
+        close_bar.pack_propagate(False)
+        ctk.CTkButton(close_bar, text="Close", width=80, height=30,
+                       fg_color=_SURFACE_LIGHT, hover_color=_GREEN,
+                       corner_radius=14, command=popup.destroy).pack(pady=7)
         popup.bind("<Escape>", lambda _e: popup.destroy())
 
     # -- actions ------------------------------------------------------
@@ -398,11 +450,11 @@ class AskWindow:
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
         if self._send_btn:
-            self._send_btn.configure(text="..." if busy else "Send", state="disabled" if busy else "normal")
+            self._send_btn.configure(text="\u23F3" if busy else "\u27A4", state="disabled" if busy else "normal")
         if self._input_entry:
             self._input_entry.configure(state="disabled" if busy else "normal")
         if self._status_label:
-            self._status_label.configure(text="Thinking..." if busy else "Ctrl+` to toggle  |  Enter to send  |  Esc to hide")
+            self._status_label.configure(text="\u2728 Thinking\u2026" if busy else "Ctrl+` toggle  \u2502  Enter send  \u2502  Esc hide")
 
 
 # ===================================================================
@@ -445,27 +497,42 @@ class CaptureWindow:
 
     def _build(self) -> None:
         win = ctk.CTkToplevel(self._root)
-        win.title("Recall — Capture Note")
-        win.geometry("640x500")
+        win.title("Recall \u2014 Capture Note")
+        win.geometry("660x520")
         win.attributes("-topmost", True)
         win.protocol("WM_DELETE_WINDOW", self._on_close)
+        win.configure(fg_color=_BG_DARK)
         self._win = win
+
+        # Title bar
+        title_bar = ctk.CTkFrame(win, fg_color=_SURFACE, corner_radius=0, height=48)
+        title_bar.pack(fill="x")
+        title_bar.pack_propagate(False)
+        ctk.CTkLabel(title_bar, text="\u270F\uFE0F  Capture Note", font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color=_TEXT).pack(padx=16, side="left")
 
         # Mode selector
         self._mode_selector = ctk.CTkSegmentedButton(
             win, values=["Quick Line", "Detailed Note"],
-            command=self._on_mode_change
+            command=self._on_mode_change,
+            font=ctk.CTkFont(size=12), corner_radius=16,
+            selected_color=_GREEN, selected_hover_color=_ACCENT,
+            unselected_color=_SURFACE_LIGHT, unselected_hover_color=_BORDER,
+            text_color=_TEXT, text_color_disabled=_MUTED,
         )
         self._mode_selector.set("Quick Line")
-        self._mode_selector.pack(padx=16, pady=(14, 8))
+        self._mode_selector.pack(padx=16, pady=(12, 8))
 
         # ── Quick Line frame ──
         self._quick_frame = ctk.CTkFrame(win, fg_color="transparent")
 
         ctk.CTkLabel(self._quick_frame, text="One-liner tip or quick note:",
-                     font=ctk.CTkFont(size=12)).pack(padx=16, pady=(8, 4), anchor="w")
-        self._quick_entry = ctk.CTkEntry(self._quick_frame, placeholder_text="Type a quick tip...",
-                                          height=38, font=ctk.CTkFont(size=13))
+                     font=ctk.CTkFont(size=12), text_color=_MUTED).pack(padx=16, pady=(8, 4), anchor="w")
+        self._quick_entry = ctk.CTkEntry(self._quick_frame, placeholder_text="Type a quick tip\u2026",
+                                          height=38, font=ctk.CTkFont(size=13),
+                                          fg_color=_SURFACE_LIGHT, border_color=_BORDER,
+                                          text_color=_TEXT, placeholder_text_color=_MUTED,
+                                          corner_radius=18)
         self._quick_entry.pack(fill="x", padx=16, pady=(0, 8))
         self._quick_entry.bind("<Return>", lambda _e: self._on_save())
 
@@ -475,23 +542,26 @@ class CaptureWindow:
         # Template buttons
         tmpl_row = ctk.CTkFrame(self._detail_frame, fg_color="transparent")
         tmpl_row.pack(fill="x", padx=16, pady=(6, 4))
-        ctk.CTkLabel(tmpl_row, text="Templates:", font=ctk.CTkFont(size=11),
-                     text_color="gray50").pack(side="left", padx=(0, 6))
+        ctk.CTkLabel(tmpl_row, text="Templates:", font=ctk.CTkFont(size=10),
+                     text_color=_MUTED).pack(side="left", padx=(0, 6))
         for name in CAPTURE_TEMPLATES:
             ctk.CTkButton(tmpl_row, text=name, width=0, height=26,
-                          font=ctk.CTkFont(size=11), fg_color="gray35", hover_color=_GREEN,
+                          font=ctk.CTkFont(size=10), fg_color=_SURFACE_LIGHT,
+                          hover_color=_GREEN, text_color=_ACCENT,
+                          corner_radius=12,
                           command=partial(self._insert_template, name)).pack(side="left", padx=2)
 
         # Textbox
         self._detail_textbox = ctk.CTkTextbox(self._detail_frame, wrap="word",
-                                               font=ctk.CTkFont(family="Segoe UI", size=12),
+                                               font=ctk.CTkFont(family="Consolas", size=12),
+                                               fg_color=_SURFACE, text_color=_TEXT,
                                                corner_radius=8, height=240)
         self._detail_textbox.pack(fill="both", expand=True, padx=16, pady=(4, 4))
 
         # Helper text
         ctk.CTkLabel(self._detail_frame,
-                     text="Tip: add #hashtag for topic routing  |  Ctrl+V to paste screenshot",
-                     font=ctk.CTkFont(size=11), text_color="gray50").pack(padx=16, anchor="w")
+                     text="Tip: add #hashtag for topic routing  \u2502  Ctrl+V to paste screenshot",
+                     font=ctk.CTkFont(size=10), text_color=_MUTED).pack(padx=16, anchor="w")
 
         # Image indicator
         self._image_label = ctk.CTkLabel(self._detail_frame, text="",
@@ -502,15 +572,18 @@ class CaptureWindow:
         self._quick_frame.pack(fill="both", expand=True)
 
         # ── Bottom bar (shared) ──
-        bottom = ctk.CTkFrame(win, fg_color="transparent")
-        bottom.pack(fill="x", padx=16, pady=(6, 10))
+        bottom = ctk.CTkFrame(win, fg_color=_SURFACE, corner_radius=0, height=44)
+        bottom.pack(fill="x", side="bottom")
+        bottom.pack_propagate(False)
 
-        self._status_label = ctk.CTkLabel(bottom, text="Ctrl+Alt+N to toggle  |  Ctrl+Enter to save  |  Esc to hide",
-                                           font=ctk.CTkFont(size=11), text_color="gray50")
-        self._status_label.pack(side="left")
+        self._status_label = ctk.CTkLabel(bottom, text="Ctrl+Alt+N toggle  \u2502  Enter save  \u2502  Esc hide",
+                                           font=ctk.CTkFont(size=10), text_color=_MUTED)
+        self._status_label.pack(side="left", padx=16)
 
-        self._save_btn = ctk.CTkButton(bottom, text="Save", width=80, command=self._on_save)
-        self._save_btn.pack(side="right")
+        self._save_btn = ctk.CTkButton(bottom, text="Save", width=80, height=30,
+                                        fg_color=_GREEN, hover_color=_ACCENT,
+                                        corner_radius=14, command=self._on_save)
+        self._save_btn.pack(side="right", padx=12)
 
         # Bindings
         win.bind("<Control-Return>", lambda _e: self._on_save())
@@ -674,6 +747,7 @@ class TrayRuntime:
         self.capture_window = CaptureWindow(self.root)
         self._voice_busy = False
         self._voice_overlay: ctk.CTkToplevel | None = None
+        self._voice_stop_event = threading.Event()
 
         mode_label = "Cloud" if _CLOUD_MODE else "Local"
         self.icon = pystray.Icon(
@@ -760,31 +834,52 @@ class TrayRuntime:
         self.root.after(800, self._poll_clipboard)
 
     def _show_icm_popup(self, incident_id: str, url: str) -> None:
-        """Show a small topmost popup for 2 seconds; click to open ICM."""
+        """Show a modern popup near system tray (bottom-right) for 4 seconds."""
         popup = ctk.CTkToplevel(self.root)
         popup.overrideredirect(True)
         popup.attributes("-topmost", True)
+        popup.configure(fg_color=_SURFACE)
         sw = self.root.winfo_screenwidth()
-        popup.geometry(f"340x52+{sw - 360}+20")
-        popup.configure(fg_color="#1a1a2e")
+        sh = self.root.winfo_screenheight()
+        popup.geometry(f"340x72+{sw - 360}+{sh - 120}")
 
-        btn = ctk.CTkButton(
-            popup, text=f"\U0001f4cb  ICM {incident_id} — click to open",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="white", fg_color="#1a1a2e", hover_color=_GREEN,
-            corner_radius=8, height=44,
-            command=lambda: (webbrowser.open(url), popup.destroy()),
-        )
-        btn.pack(fill="both", expand=True, padx=4, pady=4)
+        # Inner container with border effect
+        inner = ctk.CTkFrame(popup, fg_color=_SURFACE, corner_radius=14,
+                              border_width=1, border_color=_GREEN)
+        inner.pack(fill="both", expand=True, padx=2, pady=2)
 
-        popup.after(2000, lambda: popup.destroy() if popup.winfo_exists() else None)
+        # Left accent bar
+        accent = ctk.CTkFrame(inner, fg_color=_GREEN, width=4, corner_radius=2)
+        accent.pack(side="left", fill="y", padx=(8, 0), pady=10)
 
-    # -- Voice input ------------------------------------------------
+        # Text area
+        text_frame = ctk.CTkFrame(inner, fg_color="transparent")
+        text_frame.pack(side="left", fill="both", expand=True, padx=(8, 4), pady=8)
+        ctk.CTkLabel(text_frame, text="ICM Incident Detected",
+                     font=ctk.CTkFont(size=10, weight="bold"), text_color=_ACCENT,
+                     anchor="w").pack(anchor="w")
+        ctk.CTkLabel(text_frame, text=f"#{incident_id}",
+                     font=ctk.CTkFont(size=12), text_color=_TEXT,
+                     anchor="w").pack(anchor="w")
+
+        # Open button
+        ctk.CTkButton(inner, text="Open", width=56, height=28,
+                       fg_color=_GREEN, hover_color=_ACCENT,
+                       corner_radius=14, font=ctk.CTkFont(size=11, weight="bold"),
+                       command=lambda: (webbrowser.open(url), popup.destroy()),
+                       ).pack(side="right", padx=10)
+
+        popup.after(4000, lambda: popup.destroy() if popup.winfo_exists() else None)
+
+    # -- Voice input (toggle mode) -----------------------------------
 
     def _start_voice(self) -> None:
         if self._voice_busy:
+            # Second press → stop recording
+            self._voice_stop_event.set()
             return
         self._voice_busy = True
+        self._voice_stop_event.clear()
         self._show_voice_overlay()
         threading.Thread(target=self._record_voice, daemon=True).start()
 
@@ -794,19 +889,23 @@ class TrayRuntime:
         overlay.attributes("-topmost", True)
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        overlay.geometry(f"300x70+{sw // 2 - 150}+{sh - 140}")
-        overlay.configure(fg_color=_GREEN)
+        overlay.geometry(f"280x64+{sw // 2 - 140}+{sh - 130}")
+        overlay.configure(fg_color=_SURFACE)
+
+        inner = ctk.CTkFrame(overlay, fg_color=_SURFACE, corner_radius=16,
+                              border_width=1, border_color=_GREEN)
+        inner.pack(fill="both", expand=True, padx=2, pady=2)
+
         self._voice_label = ctk.CTkLabel(
-            overlay, text="\U0001f3a4  Listening \u2026 speak now",
-            font=ctk.CTkFont(size=14, weight="bold"), text_color="white",
+            inner, text="\U0001f3a4  Listening\u2026 speak now",
+            font=ctk.CTkFont(size=13, weight="bold"), text_color=_TEXT,
         )
-        self._voice_label.pack(expand=True)
-        # Add a pulsing dot indicator
+        self._voice_label.pack(expand=True, pady=(8, 0))
         self._voice_dot = ctk.CTkLabel(
-            overlay, text="\u25CF  \u25CF  \u25CF",
-            font=ctk.CTkFont(size=10), text_color="#a8e6cf",
+            inner, text="Press Ctrl+\u2190 again to stop",
+            font=ctk.CTkFont(size=10), text_color=_ACCENT,
         )
-        self._voice_dot.pack(pady=(0, 6))
+        self._voice_dot.pack(pady=(0, 8))
         self._voice_overlay = overlay
 
     def _hide_voice_overlay(self) -> None:
@@ -815,21 +914,38 @@ class TrayRuntime:
             self._voice_overlay = None
 
     def _record_voice(self) -> None:
+        """Record audio continuously until the user presses the hotkey again."""
         try:
             import speech_recognition as sr
             recognizer = sr.Recognizer()
             recognizer.dynamic_energy_threshold = True
             recognizer.energy_threshold = 300
-            recognizer.pause_threshold = 0.8
+            recognizer.pause_threshold = 60.0   # effectively never stop on silence
             with sr.Microphone() as source:
                 recognizer.adjust_for_ambient_noise(source, duration=0.3)
                 self.root.after(0, self._update_voice_status, "\U0001f3a4  Speak now\u2026")
-                audio = recognizer.listen(source, timeout=8, phrase_time_limit=30)
+                frames = []
+                while not self._voice_stop_event.is_set():
+                    try:
+                        chunk = recognizer.listen(source, timeout=1, phrase_time_limit=120)
+                        frames.append(chunk)
+                    except sr.WaitTimeoutError:
+                        continue
+            # Combine all audio frames
+            if not frames:
+                self.root.after(0, self._on_voice_result, "")
+                return
+            combined = frames[0]
+            for extra in frames[1:]:
+                combined = sr.AudioData(
+                    combined.frame_data + extra.frame_data,
+                    combined.sample_rate,
+                    combined.sample_width,
+                )
             self.root.after(0, self._update_voice_status, "\u23F3  Transcribing\u2026")
-            # Try server-side Whisper first, fall back to Google
-            text = self._transcribe_server(audio)
+            text = self._transcribe_server(combined)
             if not text:
-                text = recognizer.recognize_google(audio)
+                text = recognizer.recognize_google(combined)
             self.root.after(0, self._on_voice_result, text or "")
         except Exception:
             self.root.after(0, self._on_voice_result, "")
@@ -926,11 +1042,16 @@ class TrayRuntime:
     def _show_message(self, title: str, text: str) -> None:
         popup = ctk.CTkToplevel(self.root)
         popup.title(title)
-        popup.geometry("420x160")
+        popup.geometry("420x180")
         popup.attributes("-topmost", True)
+        popup.configure(fg_color=_BG_DARK)
+        ctk.CTkLabel(popup, text=title, font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=_ACCENT).pack(padx=18, pady=(18, 4), anchor="w")
         ctk.CTkLabel(popup, text=text, wraplength=380, justify="left",
-                     font=ctk.CTkFont(size=13)).pack(fill="both", expand=True, padx=18, pady=18)
-        ctk.CTkButton(popup, text="Close", width=80, command=popup.destroy).pack(pady=(0, 14))
+                     font=ctk.CTkFont(size=12), text_color=_TEXT).pack(fill="both", expand=True, padx=18, pady=(0, 8))
+        ctk.CTkButton(popup, text="Close", width=80, height=30,
+                       fg_color=_SURFACE_LIGHT, hover_color=_GREEN,
+                       corner_radius=14, command=popup.destroy).pack(pady=(0, 14))
 
     def shutdown(self) -> None:
         self.listener.stop()
