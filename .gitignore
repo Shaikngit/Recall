@@ -10,6 +10,9 @@ app-recall-logs/
 app-recall-logs-*/
 app-recall-logs.zip
 deployzip/
+build/
+dist/
+*.spec.bak
 .azure/manual-web/
 .azure/manual-web.zip
 

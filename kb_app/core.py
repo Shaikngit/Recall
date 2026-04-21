@@ -985,7 +985,7 @@ def build_entry_title(entry: InboxEntry) -> str:
 
 
 def sanitize_title(text: str, max_words: int = 12) -> str:
-    cleaned = re.sub(r"[\\/:*?\"<>|]", " ", text)
+    cleaned = re.sub(r"[\\/:*?\"<>|#]", " ", text)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .-")
     words = cleaned.split()
     if len(words) > max_words:

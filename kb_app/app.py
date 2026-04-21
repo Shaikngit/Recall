@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, Response, abort, jsonify, render_template, request
 
 from kb_app.ai import AIHelper, AISettings, AISettingsStore
 from kb_app.core import (
@@ -175,7 +175,10 @@ def create_app() -> Flask:
             return jsonify({"error": "Note text is required."}), 400
 
         if capture_mode == "quick":
-            saved_path = save_quick_tip(raw_note)
+            try:
+                saved_path = save_quick_tip(raw_note)
+            except Exception as exc:
+                return jsonify({"error": f"Could not save quick tip: {exc}"}), 500
             return jsonify(
                 {
                     "message": "Quick tip saved.",
@@ -322,6 +325,25 @@ def create_app() -> Flask:
         ai_helper = current_ai_helper()
         result = organize_inbox(ai_helper if ai_helper.is_configured else None)
         return jsonify(result)
+
+    @app.get("/download/desktop")
+    def download_desktop() -> object:
+        """Stream the desktop app zip from blob storage."""
+        from kb_app.core import CONTENT_STORE
+
+        blob_name = "_downloads/RecallKB.zip"
+        if not CONTENT_STORE.enabled:
+            return jsonify({"error": "Desktop download not available (blob storage not configured)."}), 503
+        try:
+            blob_client = CONTENT_STORE._container_client.get_blob_client(blob_name)
+            stream = blob_client.download_blob()
+            return Response(
+                stream.chunks(),
+                mimetype="application/zip",
+                headers={"Content-Disposition": "attachment; filename=RecallKB.zip"},
+            )
+        except Exception as exc:
+            return jsonify({"error": f"Download unavailable: {exc}"}), 404
 
     return app
 
