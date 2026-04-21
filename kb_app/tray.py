@@ -34,9 +34,9 @@ def _resolve_api_base() -> tuple[str, bool]:
     if env_url:
         return env_url, not env_url.startswith("http://127.0.0.1")
 
-    # 2. Config file next to exe (or repo root)
+    # 2. Config file bundled inside exe (or repo root in dev)
     if getattr(sys, "frozen", False):
-        config_dir = Path(sys.executable).parent
+        config_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
     else:
         config_dir = Path(__file__).resolve().parent.parent
     config_file = config_dir / ".recall-config.json"
@@ -636,7 +636,6 @@ class TrayRuntime:
                 pystray.MenuItem("Ask a Question  (Ctrl+`)", lambda *_a: self.enqueue("ask")),
                 pystray.MenuItem("Capture Note  (Ctrl+Alt+N)", lambda *_a: self.enqueue("capture")),
                 pystray.MenuItem("Voice Input  (Ctrl+Alt+V)", lambda *_a: self.enqueue("voice")),
-                pystray.MenuItem("Organize Inbox", lambda *_a: self.enqueue("organize")),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem(
                     "Start with Windows",
