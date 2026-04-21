@@ -4,6 +4,7 @@ import io
 import json
 import os
 import queue
+import re
 import sys
 import threading
 import webbrowser
@@ -57,7 +58,11 @@ API_BASE, _CLOUD_MODE = _resolve_api_base()
 
 HOTKEY_CAPTURE = "<ctrl>+<alt>+n"
 HOTKEY_ASK = "<ctrl>+`"
-HOTKEY_VOICE = "<ctrl>+<right>"
+HOTKEY_DASHBOARD = "<ctrl>+<right>"
+HOTKEY_VOICE = "<ctrl>+<left>"
+
+_ICM_URL_TEMPLATE = "https://portal.microsofticm.com/imp/v3/incidents/details/{}/home"
+_ICM_NUMBER_PATTERN = re.compile(r"^\s*(\d{9,14})\s*$")
 
 _APP_VERSION = "1.1.0"
 _STARTUP_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -676,10 +681,10 @@ class TrayRuntime:
             self._build_icon(),
             f"Recall KB ({mode_label})",
             menu=pystray.Menu(
-                pystray.MenuItem("Open Dashboard", lambda *_a: self.enqueue("dashboard")),
+                pystray.MenuItem("Open Dashboard  (Ctrl+\u2192)", lambda *_a: self.enqueue("dashboard")),
                 pystray.MenuItem("Ask a Question  (Ctrl+`)", lambda *_a: self.enqueue("ask")),
                 pystray.MenuItem("Capture Note  (Ctrl+Alt+N)", lambda *_a: self.enqueue("capture")),
-                pystray.MenuItem("Voice Input  (Ctrl+\u2192)", lambda *_a: self.enqueue("voice")),
+                pystray.MenuItem("Voice Input  (Ctrl+\u2190)", lambda *_a: self.enqueue("voice")),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem(
                     "Start with Windows",
@@ -692,8 +697,12 @@ class TrayRuntime:
         self.listener = keyboard.GlobalHotKeys({
             HOTKEY_CAPTURE: partial(self.enqueue, "capture"),
             HOTKEY_ASK: partial(self.enqueue, "ask"),
+            HOTKEY_DASHBOARD: partial(self.enqueue, "dashboard"),
             HOTKEY_VOICE: partial(self.enqueue, "voice"),
         })
+
+        # ICM clipboard monitor state
+        self._last_clipboard = ""
 
     def start(self) -> None:
         if self.server:
@@ -704,6 +713,7 @@ class TrayRuntime:
         if getattr(sys, "frozen", False):
             threading.Thread(target=self._check_for_update, daemon=True).start()
         self.root.after(250, self.process_actions)
+        self.root.after(500, self._poll_clipboard)
         # Open dashboard unless launched via --startup (Windows auto-start)
         if "--startup" not in sys.argv:
             self.enqueue("dashboard")
@@ -731,6 +741,43 @@ class TrayRuntime:
                 self.shutdown()
                 return
         self.root.after(250, self.process_actions)
+
+    # -- ICM clipboard monitor --------------------------------------
+
+    def _poll_clipboard(self) -> None:
+        """Check clipboard every 800ms for ICM incident numbers."""
+        try:
+            clip = self.root.clipboard_get().strip()
+        except Exception:
+            clip = ""
+        if clip and clip != self._last_clipboard:
+            self._last_clipboard = clip
+            match = _ICM_NUMBER_PATTERN.match(clip)
+            if match:
+                incident_id = match.group(1)
+                url = _ICM_URL_TEMPLATE.format(incident_id)
+                self._show_icm_popup(incident_id, url)
+        self.root.after(800, self._poll_clipboard)
+
+    def _show_icm_popup(self, incident_id: str, url: str) -> None:
+        """Show a small topmost popup for 2 seconds; click to open ICM."""
+        popup = ctk.CTkToplevel(self.root)
+        popup.overrideredirect(True)
+        popup.attributes("-topmost", True)
+        sw = self.root.winfo_screenwidth()
+        popup.geometry(f"340x52+{sw - 360}+20")
+        popup.configure(fg_color="#1a1a2e")
+
+        btn = ctk.CTkButton(
+            popup, text=f"\U0001f4cb  ICM {incident_id} — click to open",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="white", fg_color="#1a1a2e", hover_color=_GREEN,
+            corner_radius=8, height=44,
+            command=lambda: (webbrowser.open(url), popup.destroy()),
+        )
+        btn.pack(fill="both", expand=True, padx=4, pady=4)
+
+        popup.after(2000, lambda: popup.destroy() if popup.winfo_exists() else None)
 
     # -- Voice input ------------------------------------------------
 
