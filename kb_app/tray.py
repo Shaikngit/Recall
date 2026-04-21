@@ -57,7 +57,7 @@ API_BASE, _CLOUD_MODE = _resolve_api_base()
 
 HOTKEY_CAPTURE = "<ctrl>+<alt>+n"
 HOTKEY_ASK = "<ctrl>+`"
-HOTKEY_VOICE = "<ctrl>+<alt>+v"
+HOTKEY_VOICE = "<ctrl>+<right>"
 
 _APP_VERSION = "1.1.0"
 _STARTUP_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -290,9 +290,53 @@ class AskWindow:
             btn = ctk.CTkButton(src_frame, text=title, width=0, height=24,
                                 font=ctk.CTkFont(size=11), fg_color="gray30",
                                 hover_color=_GREEN,
-                                command=partial(webbrowser.open,
-                                                f"{API_BASE}/api/note?path={requests.utils.quote(path)}"))
+                                command=partial(self._open_source_note, path, title))
             btn.pack(side="left", padx=2)
+
+    def _open_source_note(self, path: str, title: str) -> None:
+        """Fetch a source note and show it in an in-app dialog."""
+        def _fetch() -> None:
+            try:
+                resp = requests.get(
+                    f"{API_BASE}/api/note",
+                    params={"path": path},
+                    timeout=15,
+                )
+                data = resp.json() if resp.ok else {}
+                content = data.get("content", "Could not load note.")
+                note_title = data.get("title", title)
+                note_path = data.get("path", path)
+                self._root.after(0, self._show_source_dialog, note_title, note_path, content)
+            except Exception as exc:
+                self._root.after(0, self._show_source_dialog, title, path, f"Error loading note: {exc}")
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _show_source_dialog(self, title: str, path: str, content: str) -> None:
+        """Show a source note in a scrollable in-app dialog."""
+        popup = ctk.CTkToplevel(self._root)
+        popup.title(f"Source: {title}")
+        popup.geometry("640x480")
+        popup.attributes("-topmost", True)
+
+        # Header
+        header = ctk.CTkFrame(popup, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(12, 0))
+        ctk.CTkLabel(header, text=title, font=ctk.CTkFont(size=15, weight="bold"),
+                     wraplength=560, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(header, text=path, font=ctk.CTkFont(size=11),
+                     text_color="gray50", anchor="w").pack(anchor="w", pady=(2, 0))
+
+        # Content
+        textbox = ctk.CTkTextbox(popup, wrap="word",
+                                  font=ctk.CTkFont(family="Segoe UI", size=12),
+                                  corner_radius=8)
+        textbox.pack(fill="both", expand=True, padx=16, pady=(8, 8))
+        textbox.insert("1.0", content)
+        textbox.configure(state="disabled")
+
+        # Close button
+        ctk.CTkButton(popup, text="Close", width=80, command=popup.destroy).pack(pady=(0, 12))
+        popup.bind("<Escape>", lambda _e: popup.destroy())
 
     # -- actions ------------------------------------------------------
 
@@ -635,7 +679,7 @@ class TrayRuntime:
                 pystray.MenuItem("Open Dashboard", lambda *_a: self.enqueue("dashboard")),
                 pystray.MenuItem("Ask a Question  (Ctrl+`)", lambda *_a: self.enqueue("ask")),
                 pystray.MenuItem("Capture Note  (Ctrl+Alt+N)", lambda *_a: self.enqueue("capture")),
-                pystray.MenuItem("Voice Input  (Ctrl+Alt+V)", lambda *_a: self.enqueue("voice")),
+                pystray.MenuItem("Voice Input  (Ctrl+\u2192)", lambda *_a: self.enqueue("voice")),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem(
                     "Start with Windows",
@@ -703,12 +747,19 @@ class TrayRuntime:
         overlay.attributes("-topmost", True)
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        overlay.geometry(f"260x56+{sw // 2 - 130}+{sh - 130}")
+        overlay.geometry(f"300x70+{sw // 2 - 150}+{sh - 140}")
         overlay.configure(fg_color=_GREEN)
-        ctk.CTkLabel(
+        self._voice_label = ctk.CTkLabel(
             overlay, text="\U0001f3a4  Listening \u2026 speak now",
-            font=ctk.CTkFont(size=13, weight="bold"), text_color="white",
-        ).pack(expand=True)
+            font=ctk.CTkFont(size=14, weight="bold"), text_color="white",
+        )
+        self._voice_label.pack(expand=True)
+        # Add a pulsing dot indicator
+        self._voice_dot = ctk.CTkLabel(
+            overlay, text="\u25CF  \u25CF  \u25CF",
+            font=ctk.CTkFont(size=10), text_color="#a8e6cf",
+        )
+        self._voice_dot.pack(pady=(0, 6))
         self._voice_overlay = overlay
 
     def _hide_voice_overlay(self) -> None:
@@ -721,19 +772,40 @@ class TrayRuntime:
             import speech_recognition as sr
             recognizer = sr.Recognizer()
             recognizer.dynamic_energy_threshold = True
+            recognizer.energy_threshold = 300
+            recognizer.pause_threshold = 0.8
             with sr.Microphone() as source:
-                recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                audio = recognizer.listen(source, timeout=5, phrase_time_limit=15)
+                recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                self.root.after(0, self._update_voice_status, "\U0001f3a4  Speak now\u2026")
+                audio = recognizer.listen(source, timeout=8, phrase_time_limit=30)
+            self.root.after(0, self._update_voice_status, "\u23F3  Transcribing\u2026")
+            # Try server-side Whisper first, fall back to Google
+            text = self._transcribe_server(audio)
+            if not text:
+                text = recognizer.recognize_google(audio)
+            self.root.after(0, self._on_voice_result, text or "")
+        except Exception:
+            self.root.after(0, self._on_voice_result, "")
+
+    def _transcribe_server(self, audio) -> str:
+        """Transcribe via server-side Whisper API if available."""
+        try:
             wav_bytes = audio.get_wav_data()
             resp = requests.post(
                 f"{API_BASE}/api/transcribe",
                 files={"audio": ("recording.wav", wav_bytes, "audio/wav")},
                 timeout=30,
             )
-            text = resp.json().get("text", "") if resp.ok else ""
-            self.root.after(0, self._on_voice_result, text)
+            return resp.json().get("text", "") if resp.ok else ""
         except Exception:
-            self.root.after(0, self._on_voice_result, "")
+            return ""
+
+    def _update_voice_status(self, text: str) -> None:
+        if hasattr(self, '_voice_label') and self._voice_label:
+            try:
+                self._voice_label.configure(text=text)
+            except Exception:
+                pass
 
     def _on_voice_result(self, text: str) -> None:
         self._hide_voice_overlay()

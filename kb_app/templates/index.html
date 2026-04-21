@@ -273,7 +273,7 @@
                 </div>
                 <button id="note-close-button" class="inline-action-button" type="button">Close</button>
             </div>
-            <pre id="note-modal-content" class="note-content"></pre>
+            <div id="note-modal-content" class="note-content-rendered"></div>
         </div>
     </div>
 
@@ -407,6 +407,40 @@
 
         function formatMarkdownText(text) {
             return String(text || '').replace(/\r\n/g, '\n');
+        }
+
+        function renderMarkdown(text) {
+            let html = escapeHtml(String(text || ''));
+            // Code blocks
+            html = html.replace(/```([\s\S]*?)```/g, '<pre class="md-code-block"><code>$1</code></pre>');
+            // Inline code
+            html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+            // Headers
+            html = html.replace(/^### (.+)$/gm, '<h4 class="md-h">$1</h4>');
+            html = html.replace(/^## (.+)$/gm, '<h3 class="md-h">$1</h3>');
+            html = html.replace(/^# (.+)$/gm, '<h2 class="md-h">$1</h2>');
+            // Bold + italic
+            html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            // Horizontal rules
+            html = html.replace(/^---$/gm, '<hr class="md-hr">');
+            // Unordered lists
+            html = html.replace(/^[\-\*] (.+)$/gm, '<li class="md-li">$1</li>');
+            html = html.replace(/(<li class="md-li">.*<\/li>\n?)+/g, function(match) {
+                return '<ul class="md-ul">' + match + '</ul>';
+            });
+            // Ordered lists
+            html = html.replace(/^\d+\.\s+(.+)$/gm, '<li class="md-oli">$1</li>');
+            html = html.replace(/(<li class="md-oli">.*<\/li>\n?)+/g, function(match) {
+                return '<ol class="md-ol">' + match + '</ol>';
+            });
+            // Line breaks (but not inside pre/code or after block elements)
+            html = html.replace(/\n/g, '<br>');
+            // Clean up brs after block elements
+            html = html.replace(/(<\/(h[2-4]|ul|ol|li|pre|hr)>)<br>/g, '$1');
+            html = html.replace(/<br>(<(h[2-4]|ul|ol|pre|hr))/g, '$1');
+            return html;
         }
 
         function introMessageHtml() {
@@ -851,7 +885,7 @@
 
             const bubble = document.createElement('div');
             bubble.className = `message-bubble ${role === 'user' ? 'user-bubble' : 'assistant-bubble'}`;
-            bubble.innerHTML = formatText(text);
+            bubble.innerHTML = role === 'assistant' ? renderMarkdown(text) : formatText(text);
             stack.appendChild(bubble);
 
             if (role === 'assistant') {
@@ -1009,7 +1043,7 @@
         function openNoteModal(note) {
             noteModalTitle.textContent = note.title || 'Note';
             noteModalPath.textContent = note.path || '';
-            noteModalContent.textContent = formatMarkdownText(note.content || '');
+            noteModalContent.innerHTML = renderMarkdown(note.content || '');
             noteModal.classList.remove('hidden');
             noteModal.setAttribute('aria-hidden', 'false');
         }
