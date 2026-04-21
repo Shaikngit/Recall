@@ -242,6 +242,35 @@ class AIHelper:
             parsed["extracted_text"] = str(data.get("extracted_text", "")).strip()
         return parsed
 
+    def transcribe_audio(self, audio_bytes: bytes) -> str | None:
+        """Transcribe audio via Azure OpenAI Whisper deployment."""
+        if self.provider != "azure-openai":
+            return None
+        headers: dict[str, str] = {}
+        if self.api_key:
+            headers["api-key"] = self.api_key
+        else:
+            token = self._get_azure_access_token()
+            if not token:
+                return None
+            headers["Authorization"] = f"Bearer {token}"
+        base_url = (self.base_url or "").rstrip("/")
+        whisper_deployment = os.getenv("AZURE_OPENAI_WHISPER_DEPLOYMENT", "shaiknkb-whisper")
+        url = (
+            f"{base_url}/openai/deployments/{whisper_deployment}"
+            f"/audio/transcriptions?api-version={DEFAULT_AZURE_OPENAI_API_VERSION}"
+        )
+        try:
+            resp = requests.post(
+                url, headers=headers,
+                files={"file": ("recording.wav", audio_bytes, "audio/wav")},
+                data={"response_format": "text"},
+                timeout=30,
+            )
+            return resp.text.strip() if resp.ok else None
+        except requests.RequestException:
+            return None
+
     def _chat(
         self,
         prompt: str | list[dict[str, object]],

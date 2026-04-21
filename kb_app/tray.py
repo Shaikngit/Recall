@@ -7,6 +7,7 @@ import queue
 import sys
 import threading
 import webbrowser
+import winreg
 from functools import partial
 from pathlib import Path
 from tkinter import Tk
@@ -55,7 +56,12 @@ def _resolve_api_base() -> tuple[str, bool]:
 API_BASE, _CLOUD_MODE = _resolve_api_base()
 
 HOTKEY_CAPTURE = "<ctrl>+<alt>+n"
-HOTKEY_ASK = "<ctrl>+q"
+HOTKEY_ASK = "<ctrl>+`"
+HOTKEY_VOICE = "<ctrl>+<alt>+v"
+
+_APP_VERSION = "1.1.0"
+_STARTUP_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_STARTUP_REG_NAME = "RecallKB"
 
 CAPTURE_TEMPLATES: dict[str, str] = {
     "Incident": "Issue:\nService:\nICM/Case:\nSymptom:\nFix:\nLearning:",
@@ -67,6 +73,69 @@ CAPTURE_TEMPLATES: dict[str, str] = {
 # Brand colours
 _GREEN = "#1e6f5c"
 _BG_LIGHT = "#f8f5ef"
+
+
+# ---------------------------------------------------------------------------
+# Windows Startup helpers
+# ---------------------------------------------------------------------------
+
+def _get_exe_path() -> str | None:
+    """Return exe path when frozen, else None."""
+    return sys.executable if getattr(sys, "frozen", False) else None
+
+
+def _is_startup_enabled() -> bool:
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY, 0, winreg.KEY_READ)
+        winreg.QueryValueEx(key, _STARTUP_REG_NAME)
+        winreg.CloseKey(key)
+        return True
+    except OSError:
+        return False
+
+
+def _set_startup(enable: bool) -> None:
+    exe = _get_exe_path()
+    if not exe:
+        return
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY, 0, winreg.KEY_SET_VALUE)
+        if enable:
+            winreg.SetValueEx(key, _STARTUP_REG_NAME, 0, winreg.REG_SZ, f'"{exe}" --startup')
+        else:
+            try:
+                winreg.DeleteValue(key, _STARTUP_REG_NAME)
+            except FileNotFoundError:
+                pass
+        winreg.CloseKey(key)
+    except OSError:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Toast notifications (winotify)
+# ---------------------------------------------------------------------------
+
+def _get_icon_path() -> str | None:
+    """Return absolute path to recall.ico if it exists."""
+    if getattr(sys, "frozen", False):
+        p = Path(sys.executable).parent / "kb_app" / "static" / "recall.ico"
+    else:
+        p = Path(__file__).resolve().parent / "static" / "recall.ico"
+    return str(p) if p.exists() else None
+
+
+def _show_toast(title: str, body: str) -> None:
+    try:
+        from winotify import Notification
+        kwargs: dict = {"app_id": "Recall KB", "title": title, "msg": body, "duration": "short"}
+        icon = _get_icon_path()
+        if icon:
+            kwargs["icon"] = icon
+        Notification(**kwargs).show()
+    except Exception:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Appearance (follows Windows light / dark automatically)
@@ -178,7 +247,7 @@ class AskWindow:
         self._send_btn.pack(side="right")
 
         # Status
-        self._status_label = ctk.CTkLabel(win, text="Ctrl+Q to toggle  |  Enter to send  |  Esc to hide",
+        self._status_label = ctk.CTkLabel(win, text="Ctrl+` to toggle  |  Enter to send  |  Esc to hide",
                                            font=ctk.CTkFont(size=11), text_color="gray50")
         self._status_label.pack(padx=14, pady=(0, 8), anchor="w")
 
@@ -284,7 +353,7 @@ class AskWindow:
         if self._input_entry:
             self._input_entry.configure(state="disabled" if busy else "normal")
         if self._status_label:
-            self._status_label.configure(text="Thinking..." if busy else "Ctrl+Q to toggle  |  Enter to send  |  Esc to hide")
+            self._status_label.configure(text="Thinking..." if busy else "Ctrl+` to toggle  |  Enter to send  |  Esc to hide")
 
 
 # ===================================================================
@@ -510,6 +579,8 @@ class CaptureWindow:
 
     def _on_saved(self, message: str) -> None:
         self._set_status(message)
+        if not message.startswith("Error"):
+            _show_toast("Note Captured", message)
         # Clear fields
         if self._mode == "Quick Line" and self._quick_entry:
             self._quick_entry.delete(0, "end")
@@ -552,6 +623,8 @@ class TrayRuntime:
 
         self.ask_window = AskWindow(self.root)
         self.capture_window = CaptureWindow(self.root)
+        self._voice_busy = False
+        self._voice_overlay: ctk.CTkToplevel | None = None
 
         mode_label = "Cloud" if _CLOUD_MODE else "Local"
         self.icon = pystray.Icon(
@@ -560,15 +633,23 @@ class TrayRuntime:
             f"Recall KB ({mode_label})",
             menu=pystray.Menu(
                 pystray.MenuItem("Open Dashboard", lambda *_a: self.enqueue("dashboard")),
-                pystray.MenuItem("Ask a Question  (Ctrl+Q)", lambda *_a: self.enqueue("ask")),
+                pystray.MenuItem("Ask a Question  (Ctrl+`)", lambda *_a: self.enqueue("ask")),
                 pystray.MenuItem("Capture Note  (Ctrl+Alt+N)", lambda *_a: self.enqueue("capture")),
+                pystray.MenuItem("Voice Input  (Ctrl+Alt+V)", lambda *_a: self.enqueue("voice")),
                 pystray.MenuItem("Organize Inbox", lambda *_a: self.enqueue("organize")),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem(
+                    "Start with Windows",
+                    lambda *_a: self.enqueue("toggle_startup"),
+                    checked=lambda _item: _is_startup_enabled(),
+                ),
                 pystray.MenuItem("Quit", lambda *_a: self.enqueue("quit")),
             ),
         )
         self.listener = keyboard.GlobalHotKeys({
             HOTKEY_CAPTURE: partial(self.enqueue, "capture"),
             HOTKEY_ASK: partial(self.enqueue, "ask"),
+            HOTKEY_VOICE: partial(self.enqueue, "voice"),
         })
 
     def start(self) -> None:
@@ -576,8 +657,13 @@ class TrayRuntime:
             self.server.start()
         self.listener.start()
         self.icon.run_detached()
+        # Auto-update check (background, frozen exe only)
+        if getattr(sys, "frozen", False):
+            threading.Thread(target=self._check_for_update, daemon=True).start()
         self.root.after(250, self.process_actions)
-        self.enqueue("dashboard")
+        # Open dashboard unless launched via --startup (Windows auto-start)
+        if "--startup" not in sys.argv:
+            self.enqueue("dashboard")
         self.root.mainloop()
 
     def enqueue(self, action: str) -> None:
@@ -592,16 +678,118 @@ class TrayRuntime:
                 self.ask_window.show()
             elif action == "capture":
                 self.capture_window.show()
+            elif action == "voice":
+                self._start_voice()
             elif action == "organize":
                 self.organize_now()
+            elif action == "toggle_startup":
+                _set_startup(not _is_startup_enabled())
             elif action == "quit":
                 self.shutdown()
                 return
         self.root.after(250, self.process_actions)
 
+    # -- Voice input ------------------------------------------------
+
+    def _start_voice(self) -> None:
+        if self._voice_busy:
+            return
+        self._voice_busy = True
+        self._show_voice_overlay()
+        threading.Thread(target=self._record_voice, daemon=True).start()
+
+    def _show_voice_overlay(self) -> None:
+        overlay = ctk.CTkToplevel(self.root)
+        overlay.overrideredirect(True)
+        overlay.attributes("-topmost", True)
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        overlay.geometry(f"260x56+{sw // 2 - 130}+{sh - 130}")
+        overlay.configure(fg_color=_GREEN)
+        ctk.CTkLabel(
+            overlay, text="\U0001f3a4  Listening \u2026 speak now",
+            font=ctk.CTkFont(size=13, weight="bold"), text_color="white",
+        ).pack(expand=True)
+        self._voice_overlay = overlay
+
+    def _hide_voice_overlay(self) -> None:
+        if self._voice_overlay:
+            self._voice_overlay.destroy()
+            self._voice_overlay = None
+
+    def _record_voice(self) -> None:
+        try:
+            import speech_recognition as sr
+            recognizer = sr.Recognizer()
+            recognizer.dynamic_energy_threshold = True
+            with sr.Microphone() as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                audio = recognizer.listen(source, timeout=5, phrase_time_limit=15)
+            wav_bytes = audio.get_wav_data()
+            resp = requests.post(
+                f"{API_BASE}/api/transcribe",
+                files={"audio": ("recording.wav", wav_bytes, "audio/wav")},
+                timeout=30,
+            )
+            text = resp.json().get("text", "") if resp.ok else ""
+            self.root.after(0, self._on_voice_result, text)
+        except Exception:
+            self.root.after(0, self._on_voice_result, "")
+
+    def _on_voice_result(self, text: str) -> None:
+        self._hide_voice_overlay()
+        self._voice_busy = False
+        if not text.strip():
+            _show_toast("Voice Input", "No speech detected.")
+            return
+        # Insert into whichever window is visible
+        ask_win = self.ask_window._win
+        cap_win = self.capture_window._win
+        if ask_win and ask_win.winfo_exists() and ask_win.state() != "withdrawn":
+            entry = self.ask_window._input_entry
+            if entry:
+                cur = entry.get()
+                entry.delete(0, "end")
+                entry.insert(0, (cur + " " + text).strip())
+                entry.focus_set()
+            return
+        if cap_win and cap_win.winfo_exists() and cap_win.state() != "withdrawn":
+            if self.capture_window._mode == "Quick Line" and self.capture_window._quick_entry:
+                e = self.capture_window._quick_entry
+                cur = e.get()
+                e.delete(0, "end")
+                e.insert(0, (cur + " " + text).strip())
+            elif self.capture_window._detail_textbox:
+                self.capture_window._detail_textbox.insert("end", text)
+            return
+        # No window open → open Ask with voice text
+        self.ask_window.show()
+        self.root.after(100, self._insert_voice_text, text)
+
+    def _insert_voice_text(self, text: str) -> None:
+        if self.ask_window._input_entry:
+            self.ask_window._input_entry.insert(0, text)
+
+    # -- Auto-update ------------------------------------------------
+
+    def _check_for_update(self) -> None:
+        try:
+            resp = requests.get(f"{API_BASE}/api/desktop-version", timeout=10)
+            if not resp.ok:
+                return
+            latest = resp.json().get("version", _APP_VERSION)
+            if latest != _APP_VERSION:
+                self.root.after(0, lambda: _show_toast(
+                    "Update Available",
+                    f"Recall KB v{latest} is available. Right-click tray \u2192 Open Dashboard to download.",
+                ))
+        except Exception:
+            pass
+
+    # -- Organize / messages ----------------------------------------
+
     def organize_now(self) -> None:
         if _CLOUD_MODE:
-            # Call the remote API
             def _do() -> None:
                 try:
                     resp = requests.post(f"{API_BASE}/api/organize", json={}, timeout=60)

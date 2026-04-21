@@ -40,6 +40,9 @@ a = Analysis(
         'PIL.ImageGrab',
         'requests',
         'customtkinter',
+        'winotify',
+        'speech_recognition',
+        'pyaudio',
     ],
     hookspath=[],
     hooksconfig={},
@@ -64,7 +67,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,          # No console window — tray + GUI only
-    icon=None,              # Uses default; replace with .ico path if desired
+    icon='kb_app/static/recall.ico',
 )
 
 coll = COLLECT(

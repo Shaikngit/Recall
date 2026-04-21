@@ -3,3 +3,6 @@ customtkinter==5.2.2
 Pillow==11.1.0
 pynput==1.7.7
 pystray==0.19.5
+winotify==1.1.0
+SpeechRecognition==3.16.0
+PyAudio==0.2.14

@@ -326,6 +326,27 @@ def create_app() -> Flask:
         result = organize_inbox(ai_helper if ai_helper.is_configured else None)
         return jsonify(result)
 
+    @app.post("/api/transcribe")
+    def transcribe_audio() -> object:
+        """Transcribe uploaded audio via Azure OpenAI Whisper."""
+        ai_helper = current_ai_helper()
+        if not ai_helper.is_configured:
+            return jsonify({"error": "AI not configured"}), 503
+        audio_file = request.files.get("audio")
+        if not audio_file:
+            return jsonify({"error": "No audio file provided"}), 400
+        text = ai_helper.transcribe_audio(audio_file.read())
+        if text is None:
+            return jsonify({"error": "Transcription failed"}), 500
+        return jsonify({"text": text})
+
+    @app.get("/api/desktop-version")
+    def desktop_version() -> object:
+        """Return the latest desktop app version."""
+        import os as _os
+        ver = _os.environ.get("RECALL_DESKTOP_VERSION", "1.1.0")
+        return jsonify({"version": ver})
+
     @app.get("/download/desktop")
     def download_desktop() -> object:
         """Stream the desktop app zip from blob storage."""
