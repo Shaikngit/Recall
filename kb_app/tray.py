@@ -889,7 +889,7 @@ class TrayRuntime:
         overlay.attributes("-topmost", True)
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        overlay.geometry(f"280x64+{sw // 2 - 140}+{sh - 130}")
+        overlay.geometry(f"280x64+{sw - 300}+{sh - 120}")
         overlay.configure(fg_color=_SURFACE)
 
         inner = ctk.CTkFrame(overlay, fg_color=_SURFACE, corner_radius=16,
