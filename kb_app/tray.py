@@ -835,10 +835,13 @@ class TrayRuntime:
 
     def _show_icm_popup(self, incident_id: str, url: str) -> None:
         """Show a modern popup near system tray (bottom-right) for 4 seconds."""
-        popup = ctk.CTkToplevel(self.root)
+        import tkinter as tk
+        # Use plain Toplevel to avoid CTkToplevel's internal 200ms deiconify
+        popup = tk.Toplevel(self.root)
+        popup.withdraw()
         popup.overrideredirect(True)
         popup.attributes("-topmost", True)
-        popup.configure(fg_color=_SURFACE)
+        popup.configure(bg=_SURFACE)
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         popup.geometry(f"340x72+{sw - 360}+{sh - 120}")
@@ -869,6 +872,10 @@ class TrayRuntime:
                        command=lambda: (webbrowser.open(url), popup.destroy()),
                        ).pack(side="right", padx=10)
 
+        # Show only after geometry and widgets are fully committed
+        popup.update_idletasks()
+        popup.deiconify()
+
         popup.after(4000, lambda: popup.destroy() if popup.winfo_exists() else None)
 
     # -- Voice input (toggle mode) -----------------------------------
@@ -884,13 +891,15 @@ class TrayRuntime:
         threading.Thread(target=self._record_voice, daemon=True).start()
 
     def _show_voice_overlay(self) -> None:
-        overlay = ctk.CTkToplevel(self.root)
+        import tkinter as tk
+        overlay = tk.Toplevel(self.root)
+        overlay.withdraw()
         overlay.overrideredirect(True)
         overlay.attributes("-topmost", True)
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         overlay.geometry(f"280x64+{sw - 300}+{sh - 120}")
-        overlay.configure(fg_color=_SURFACE)
+        overlay.configure(bg=_SURFACE)
 
         inner = ctk.CTkFrame(overlay, fg_color=_SURFACE, corner_radius=16,
                               border_width=1, border_color=_GREEN)
@@ -907,6 +916,11 @@ class TrayRuntime:
         )
         self._voice_dot.pack(pady=(0, 8))
         self._voice_overlay = overlay
+
+        # Commit geometry and show only after everything is laid out
+        overlay.update_idletasks()
+        overlay.deiconify()
+        overlay.lift()
 
     def _hide_voice_overlay(self) -> None:
         if self._voice_overlay:
