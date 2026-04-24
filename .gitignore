@@ -9,6 +9,7 @@ infra/main.json
 app-recall-logs/
 app-recall-logs-*/
 app-recall-logs.zip
+*.log
 deployzip/
 build/
 dist/

@@ -62,7 +62,12 @@ HOTKEY_DASHBOARD = "<ctrl>+<right>"
 HOTKEY_VOICE = "<ctrl>+<left>"
 
 _ICM_URL_TEMPLATE = "https://portal.microsofticm.com/imp/v3/incidents/details/{}/home"
-_ICM_NUMBER_PATTERN = re.compile(r"^\s*(7\d{8}|5\d{13}|2\d{13})\s*$")
+# ICM: 9-digit (7+8), 14-digit (5+13), OR 14-digit (2+13 but NOT 26xxxx)
+_ICM_NUMBER_PATTERN = re.compile(r"^\s*(7\d{8}|5\d{13}|2(?!6)\d{13})\s*$")
+_ASC_URL_TEMPLATE = "https://azuresupportcenter.azure.com/solutionexplorer?srId={}"
+_DFM_URL_TEMPLATE = "https://onesupport.crm.dynamics.com/main.aspx?appid=101acb62-8d00-eb11-a813-000d3a8b3117&pagetype=search&searchText={}"
+# ASC/DFM IDs are 16 digits that begin with 26, which keeps them distinct from ICM IDs.
+_ASC_DFM_NUMBER_PATTERN = re.compile(r"^\s*(26\d{14})\s*$")
 
 _APP_VERSION = "1.1.0"
 _STARTUP_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -818,65 +823,149 @@ class TrayRuntime:
 
     # -- ICM clipboard monitor --------------------------------------
 
-    def _poll_clipboard(self) -> None:
-        """Check clipboard every 800ms for ICM incident numbers."""
+    @staticmethod
+    def _safe_log(msg: str) -> None:
+        """Write to log file only (sys.stderr is None in frozen exe)."""
+        import os
         try:
-            clip = self.root.clipboard_get().strip()
+            with open(os.path.join(os.path.expanduser("~"), "RecallKB-clipboard.log"), "a") as f:
+                f.write(msg + "\n")
         except Exception:
-            clip = ""
-        if clip and clip != self._last_clipboard:
-            self._last_clipboard = clip
-            match = _ICM_NUMBER_PATTERN.match(clip)
-            if match:
-                incident_id = match.group(1)
-                url = _ICM_URL_TEMPLATE.format(incident_id)
-                self._show_icm_popup(incident_id, url)
+            pass
+
+    def _poll_clipboard(self) -> None:
+        """Check clipboard every 800ms for ASC/DFM and ICM numbers (in priority order)."""
+        try:
+            try:
+                clip = self.root.clipboard_get().strip()
+            except Exception:
+                clip = ""
+
+            if clip and clip != self._last_clipboard:
+                self._last_clipboard = clip
+                self._safe_log(f"[CLIPBOARD] New value: {clip!r} (len={len(clip)})")
+
+                # PRIORITY 1: Check for 16-digit ASC/DFM IDs starting with 26
+                asc_dfm_match = _ASC_DFM_NUMBER_PATTERN.match(clip)
+                if asc_dfm_match:
+                    sr_id = asc_dfm_match.group(1)
+                    self._safe_log(f"[CLIPBOARD] [OK] ASC/DFM match: {sr_id}")
+                    asc_url = _ASC_URL_TEMPLATE.format(sr_id)
+                    dfm_url = _DFM_URL_TEMPLATE.format(sr_id)
+                    self._show_action_popup(
+                        title="ASC Case Detected",
+                        subtitle=f"#{sr_id}",
+                        button_text="Open ASC",
+                        url=asc_url,
+                    )
+                    self.root.after(
+                        4100,
+                        lambda sid=sr_id, link=dfm_url: self._show_action_popup(
+                            title="DFM Search Detected",
+                            subtitle=f"#{sid}",
+                            button_text="Open DFM",
+                            url=link,
+                        ),
+                    )
+                else:
+                    # PRIORITY 2: Check for 9/14-digit ICM IDs
+                    match = _ICM_NUMBER_PATTERN.match(clip)
+                    if match:
+                        incident_id = match.group(1)
+                        self._safe_log(f"[CLIPBOARD] [OK] ICM match: {incident_id}")
+                        url = _ICM_URL_TEMPLATE.format(incident_id)
+                        self._show_icm_popup(incident_id, url)
+                    else:
+                        self._safe_log(f"[CLIPBOARD] [MISS] No pattern matched for: {clip!r}")
+        except Exception as exc:
+            self._safe_log(f"[POLL] EXCEPTION: {exc}")
+
+        # Always reschedule
         self.root.after(800, self._poll_clipboard)
 
     def _show_icm_popup(self, incident_id: str, url: str) -> None:
         """Show a modern popup near system tray (bottom-right) for 4 seconds."""
+        self._show_action_popup(
+            title="ICM Incident Detected",
+            subtitle=f"#{incident_id}",
+            button_text="Open",
+            url=url,
+        )
+
+    def _show_action_popup(self, title: str, subtitle: str, button_text: str, url: str) -> None:
+        """Show a modern action popup near system tray (bottom-right) for 4 seconds."""
         import tkinter as tk
-        # Use plain Toplevel to avoid CTkToplevel's internal 200ms deiconify
-        popup = tk.Toplevel(self.root)
-        popup.withdraw()
-        popup.overrideredirect(True)
-        popup.attributes("-topmost", True)
-        popup.configure(bg=_SURFACE)
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        popup.geometry(f"340x72+{sw - 360}+{sh - 120}")
+        import os
 
-        # Inner container with border effect
-        inner = ctk.CTkFrame(popup, fg_color=_SURFACE, corner_radius=14,
-                              border_width=1, border_color=_GREEN)
-        inner.pack(fill="both", expand=True, padx=2, pady=2)
+        self._safe_log(f"[POPUP] _show_action_popup called: title={title!r}, subtitle={subtitle!r}")
 
-        # Left accent bar
-        accent = ctk.CTkFrame(inner, fg_color=_GREEN, width=4, corner_radius=2)
-        accent.pack(side="left", fill="y", padx=(8, 0), pady=10)
+        try:
+            popup = tk.Toplevel(self.root)
+            popup.withdraw()
+            popup.overrideredirect(True)
+            popup.attributes("-topmost", True)
+            popup.configure(bg=_SURFACE)
 
-        # Text area
-        text_frame = ctk.CTkFrame(inner, fg_color="transparent")
-        text_frame.pack(side="left", fill="both", expand=True, padx=(8, 4), pady=8)
-        ctk.CTkLabel(text_frame, text="ICM Incident Detected",
-                     font=ctk.CTkFont(size=10, weight="bold"), text_color=_ACCENT,
-                     anchor="w").pack(anchor="w")
-        ctk.CTkLabel(text_frame, text=f"#{incident_id}",
-                     font=ctk.CTkFont(size=12), text_color=_TEXT,
-                     anchor="w").pack(anchor="w")
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            popup.geometry(f"340x72+{sw - 360}+{sh - 120}")
 
-        # Open button
-        ctk.CTkButton(inner, text="Open", width=56, height=28,
-                       fg_color=_GREEN, hover_color=_ACCENT,
-                       corner_radius=14, font=ctk.CTkFont(size=11, weight="bold"),
-                       command=lambda: (webbrowser.open(url), popup.destroy()),
-                       ).pack(side="right", padx=10)
+            container = tk.Frame(
+                popup,
+                bg=_SURFACE,
+                highlightbackground=_GREEN,
+                highlightthickness=1,
+                bd=0,
+            )
+            container.pack(fill="both", expand=True, padx=2, pady=2)
 
-        # Show only after geometry and widgets are fully committed
-        popup.update_idletasks()
-        popup.deiconify()
+            accent = tk.Frame(container, bg=_GREEN, width=4)
+            accent.pack(side="left", fill="y", padx=(8, 0), pady=10)
 
-        popup.after(4000, lambda: popup.destroy() if popup.winfo_exists() else None)
+            text_frame = tk.Frame(container, bg=_SURFACE)
+            text_frame.pack(side="left", fill="both", expand=True, padx=(8, 6), pady=8)
+
+            tk.Label(
+                text_frame,
+                text=title,
+                bg=_SURFACE,
+                fg=_ACCENT,
+                anchor="w",
+                font=("Segoe UI", 9, "bold"),
+            ).pack(anchor="w")
+            tk.Label(
+                text_frame,
+                text=subtitle,
+                bg=_SURFACE,
+                fg=_TEXT,
+                anchor="w",
+                font=("Segoe UI", 11),
+            ).pack(anchor="w")
+
+            tk.Button(
+                container,
+                text=button_text,
+                bg=_GREEN,
+                fg="#0A0A0A",
+                activebackground=_ACCENT,
+                activeforeground="#0A0A0A",
+                relief="flat",
+                bd=0,
+                padx=12,
+                pady=6,
+                command=lambda: (webbrowser.open(url), popup.destroy()),
+            ).pack(side="right", padx=10)
+
+            popup.update_idletasks()
+            popup.deiconify()
+            popup.lift()
+            self._safe_log(f"[POPUP] Popup shown successfully: {title!r}")
+            popup.after(4000, lambda: popup.destroy() if popup.winfo_exists() else None)
+        except Exception as exc:
+            import traceback
+            self._safe_log(f"[POPUP] ERROR: {exc}\n{traceback.format_exc()}")
+
+
 
     # -- Voice input (toggle mode) -----------------------------------
 
