@@ -131,11 +131,36 @@ param blobPrivateDnsZoneGroupName string = 'default'
 @description('Private link service connection name for the Blob private endpoint.')
 param blobPrivateEndpointConnectionName string = ''
 
+@description('Enable private networking between the App Service and Azure OpenAI. Optional - defaults to false.')
+param enableOpenAIPrivateNetworking bool = false
+
+@description('Name of the subnet used for the OpenAI private endpoint.')
+param openaiPrivateEndpointSubnetName string = 'openai-private-endpoint-subnet'
+
+@description('CIDR prefix for the OpenAI private endpoint subnet.')
+param openaiPrivateEndpointSubnetPrefix string = '10.0.3.0/24'
+
+@description('Private DNS zone used for Azure OpenAI private endpoints.')
+param openaiPrivateDnsZoneName string = 'privatelink.openai.azure.com'
+
+@description('Optional private endpoint name for OpenAI. Leave blank to derive a name.')
+param openaiPrivateEndpointName string = ''
+
+@description('Private DNS zone config name attached to the OpenAI private endpoint DNS zone group.')
+param openaiPrivateDnsZoneConfigName string = 'openai'
+
+@description('Virtual network link name for the OpenAI private DNS zone.')
+param openaiPrivateDnsZoneVnetLinkName string = 'mykb-openai-dns-link'
+
+@description('Private link service connection name for the OpenAI private endpoint.')
+param openaiPrivateEndpointConnectionName string = ''
+
 var normalizedEnvironmentName = toLower(replace(environmentName, '-', ''))
 var uniqueSuffix = take(uniqueString(subscription().subscriptionId, resourceGroup().id, environmentName), 6)
 var createNewOpenAI = openAIMode == 'new'
 var useBlobContent = enableBlobContent
 var useBlobPrivateNetworking = enableBlobPrivateNetworking
+var useOpenAIPrivateNetworking = enableOpenAIPrivateNetworking
 var useExistingAppServicePlan = !empty(existingAppServicePlanName)
 var useExistingWebApp = !empty(existingWebAppName)
 
@@ -143,10 +168,12 @@ var appServicePlanName = useExistingAppServicePlan ? existingAppServicePlanName 
 var webAppName = useExistingWebApp ? existingWebAppName : take('app-${normalizedEnvironmentName}-${uniqueSuffix}', 60)
 var derivedOpenAIAccountName = take('oai${normalizedEnvironmentName}${uniqueSuffix}', 64)
 var derivedBlobPrivateEndpointName = take('pe-${normalizedEnvironmentName}-blob', 80)
+var derivedOpenAIPrivateEndpointName = take('pe-${normalizedEnvironmentName}-openai', 80)
 var effectiveBlobPrivateEndpointName = empty(blobPrivateEndpointName) ? derivedBlobPrivateEndpointName : blobPrivateEndpointName
 var effectiveBlobPrivateEndpointConnectionName = empty(blobPrivateEndpointConnectionName) ? '${effectiveBlobPrivateEndpointName}-blob' : blobPrivateEndpointConnectionName
+var effectiveOpenAIPrivateEndpointName = empty(openaiPrivateEndpointName) ? derivedOpenAIPrivateEndpointName : openaiPrivateEndpointName
+var effectiveOpenAIPrivateEndpointConnectionName = empty(openaiPrivateEndpointConnectionName) ? '${effectiveOpenAIPrivateEndpointName}-openai' : openaiPrivateEndpointConnectionName
 var blobAccountUrl = 'https://${blobStorageAccountName}.blob.${environment().suffixes.storage}'
-var existingVirtualNetworkResourceId = resourceId(existingVirtualNetworkResourceGroupName, 'Microsoft.Network/virtualNetworks', existingVirtualNetworkName)
 var effectiveOpenAIAccountName = createNewOpenAI
   ? (empty(openAINewAccountName) ? derivedOpenAIAccountName : openAINewAccountName)
   : split(openAIResourceId, '/')[8]
@@ -176,7 +203,7 @@ var blobContentAppSettings = useBlobContent ? {
 var blobBootstrapAppSettings = useBlobContent && !empty(blobBootstrapRoot) ? {
   MYKB_BLOB_BOOTSTRAP_ROOT: blobBootstrapRoot
 } : {}
-var blobNetworkingAppSettings = useBlobPrivateNetworking ? {
+var blobNetworkingAppSettings = useBlobPrivateNetworking || useOpenAIPrivateNetworking ? {
   WEBSITE_DNS_SERVER: '168.63.129.16'
   WEBSITE_VNET_ROUTE_ALL: '1'
 } : {}
@@ -203,6 +230,11 @@ resource existingWebApp 'Microsoft.Web/sites@2025-03-01' existing = if (useExist
   name: webAppName
 }
 
+resource existingVirtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' existing = if (useBlobPrivateNetworking || useOpenAIPrivateNetworking) {
+  scope: resourceGroup(existingVirtualNetworkResourceGroupName)
+  name: existingVirtualNetworkName
+}
+
 module blobNetworkSubnets 'modules/blob-network-subnets.bicep' = if (useBlobPrivateNetworking) {
   name: 'blob-network-subnets'
   scope: resourceGroup(existingVirtualNetworkResourceGroupName)
@@ -215,6 +247,16 @@ module blobNetworkSubnets 'modules/blob-network-subnets.bicep' = if (useBlobPriv
     storagePrivateEndpointSubnetName: storagePrivateEndpointSubnetName
     storagePrivateEndpointSubnetPrefix: storagePrivateEndpointSubnetPrefix
     virtualNetworkName: existingVirtualNetworkName
+  }
+}
+
+module openaiNetworkSubnet 'modules/openai-network-subnet.bicep' = if (useOpenAIPrivateNetworking) {
+  name: 'openai-network-subnet'
+  scope: resourceGroup(existingVirtualNetworkResourceGroupName)
+  params: {
+    virtualNetworkName: existingVirtualNetworkName
+    subnetName: openaiPrivateEndpointSubnetName
+    subnetPrefix: openaiPrivateEndpointSubnetPrefix
   }
 }
 
@@ -241,7 +283,7 @@ resource newOpenAI 'Microsoft.CognitiveServices/accounts@2025-06-01' = if (creat
   properties: {
     customSubDomainName: effectiveOpenAIAccountName
     disableLocalAuth: true
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: useOpenAIPrivateNetworking ? 'Disabled' : 'Enabled'
   }
 }
 
@@ -343,7 +385,7 @@ resource blobPrivateDnsZoneVnetLink 'Microsoft.Network/privateDnsZones/virtualNe
     registrationEnabled: false
     resolutionPolicy: blobPrivateDnsZoneResolutionPolicy
     virtualNetwork: {
-      id: existingVirtualNetworkResourceId
+      id: existingVirtualNetwork!.id
     }
   }
 }
@@ -381,6 +423,22 @@ resource blobPrivateEndpointDnsZoneGroup 'Microsoft.Network/privateEndpoints/pri
         }
       }
     ]
+  }
+}
+
+module openaiPrivateEndpointModule 'modules/openai-private-endpoint.bicep' = if (useOpenAIPrivateNetworking) {
+  name: 'openai-private-endpoint'
+  scope: resourceGroup(existingVirtualNetworkResourceGroupName)
+  params: {
+    openaiPrivateDnsZoneName: openaiPrivateDnsZoneName
+    openaiPrivateDnsZoneVnetLinkName: openaiPrivateDnsZoneVnetLinkName
+    openaiPrivateDnsZoneConfigName: openaiPrivateDnsZoneConfigName
+    openaiPrivateEndpointName: effectiveOpenAIPrivateEndpointName
+    openaiPrivateEndpointConnectionName: effectiveOpenAIPrivateEndpointConnectionName
+    virtualNetworkName: existingVirtualNetworkName
+    location: existingVirtualNetwork!.location
+    openaiResourceId: createNewOpenAI ? newOpenAI.id : openAIResourceId
+    subnetId: openaiNetworkSubnet!.outputs.subnetId
   }
 }
 
@@ -430,6 +488,8 @@ module openAIRoleAssignment 'modules/openai-role-assignment.bicep' = if (assignO
 output appServicePlanName string = appServicePlanName
 output blobPrivateEndpointName string = useBlobPrivateNetworking ? blobPrivateEndpoint.name : ''
 output blobPrivateDnsZoneName string = useBlobPrivateNetworking ? blobPrivateDnsZone.name : ''
+  output openaiPrivateEndpointName string = useOpenAIPrivateNetworking ? openaiPrivateEndpointModule!.outputs.privateEndpointName : ''
+  output openaiPrivateDnsZoneName string = useOpenAIPrivateNetworking ? openaiPrivateEndpointModule!.outputs.privateDnsZoneName : ''
 output openAIAccountName string = effectiveOpenAIAccountName
 output openAIMode string = openAIMode
 output openAIRoleAssignmentEnabled bool = assignOpenAIRole
