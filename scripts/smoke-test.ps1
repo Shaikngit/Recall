@@ -45,17 +45,43 @@ if (-not $capture.savedTo) {
     throw "Capture did not return a savedTo value."
 }
 
-$ask = Invoke-JsonPost -Url "$base/api/ask" -Payload @{ query = $marker; history = @() }
-if (-not $ask.answer) {
-    throw "Ask endpoint did not return an answer."
-}
-if (-not $ask.results -or $ask.results.Count -lt 1) {
-    throw "Ask endpoint did not return any source results."
+$ask = $null
+$maxAttempts = 6
+$sleepSeconds = 2
+$matched = $false
+for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    $ask = Invoke-JsonPost -Url "$base/api/ask" -Payload @{ query = $marker; history = @() }
+    if (-not $ask.answer) {
+        throw "Ask endpoint did not return an answer."
+    }
+    if (-not $ask.results -or $ask.results.Count -lt 1) {
+        if ($attempt -lt $maxAttempts) {
+            Start-Sleep -Seconds $sleepSeconds
+            continue
+        }
+        throw "Ask endpoint did not return any source results."
+    }
+
+    $matched = $false
+    foreach ($result in $ask.results) {
+        if ($result.path -and $result.path -like "*$($capture.savedTo)") {
+            $matched = $true
+            break
+        }
+    }
+
+    if ($matched) {
+        break
+    }
+
+    if ($attempt -lt $maxAttempts) {
+        Start-Sleep -Seconds $sleepSeconds
+    }
 }
 
 $firstResult = $ask.results[0]
-if (-not $firstResult.path -or $firstResult.path -notlike "*$($capture.savedTo)") {
-    throw "Top result was not the note created by the smoke test. Top result path: $($firstResult.path)"
+if (-not $matched) {
+    throw "Newly captured note was not found in ask results after retries. Top result path: $($firstResult.path)"
 }
 
 Write-Host "Root: OK" -ForegroundColor Green

@@ -664,12 +664,17 @@ def search_notes(query: str, search_root: Path | None = None) -> list[SearchResu
             results: list[SearchResult] = []
             for result in azure_results:
                 try:
+                    # Prefer Azure relevance score for ranking; fall back to stored document score.
+                    azure_score = result.get("@search.score")
+                    if azure_score is None:
+                        azure_score = result.get("score", 0)
+
                     note_path = CONTENT_ROOT / result["relative_path"]
                     results.append(
                         SearchResult(
                             path=note_path,
                             title=result.get("title", "Untitled"),
-                            score=int(result.get("score", 0) * 100),
+                            score=int(float(azure_score) * 1000),
                             snippet=result.get("snippet", ""),
                             content=result.get("content", ""),
                         )
