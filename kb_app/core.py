@@ -159,6 +159,11 @@ def append_to_daily_inbox(raw_note: str) -> tuple[Path, str]:
     else:
         note_path.write_text(heading + entry + "\n", encoding="utf-8")
     sync_content_write(note_path)
+    
+    # Index the entire Inbox note in Azure Search
+    title = f"Inbox for {now:%Y-%m-%d}"
+    content = note_path.read_text(encoding="utf-8")
+    index_note_in_search(note_path, title, content)
 
     return note_path, capture_id
 
@@ -734,6 +739,8 @@ def index_note_in_search(note_path: Path, title: str, content: str) -> None:
         file_path_str = str(note_path).replace("\\", "/")
         doc_id = hashlib.md5(file_path_str.encode()).hexdigest()[:32]
         _, snippet = read_title_and_snippet(note_path)
+        
+        logger.info(f"Indexing note: relative_path={relative_path}, doc_id={doc_id}, title={title[:50]}")
 
         SEARCH_INDEX_MANAGER.index_document(
             doc_id=doc_id,
@@ -743,6 +750,7 @@ def index_note_in_search(note_path: Path, title: str, content: str) -> None:
             snippet=snippet,
             score=1.0,
         )
+        logger.info(f"Successfully indexed document {doc_id}")
     except Exception as e:
         logger.warning(f"Failed to index note {note_path}: {e}")
 
@@ -1425,6 +1433,11 @@ def write_kb_note(destination_path: Path, entry: InboxEntry, draft: dict[str, st
     else:
         destination_path.write_text(body, encoding="utf-8")
     sync_content_write(destination_path)
+    
+    # Index the note in Azure Search
+    title = draft.get("title", "Untitled")
+    content = destination_path.read_text(encoding="utf-8")
+    index_note_in_search(destination_path, title, content)
 
 
 def rewrite_inbox_file(inbox_path: Path, entries: list[InboxEntry]) -> None:
@@ -1441,6 +1454,11 @@ def rewrite_inbox_file(inbox_path: Path, entries: list[InboxEntry]) -> None:
         lines.append("")
     inbox_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     sync_content_write(inbox_path)
+    
+    # Index the updated Inbox file in Azure Search
+    title = f"Inbox for {date_text}"
+    content = inbox_path.read_text(encoding="utf-8")
+    index_note_in_search(inbox_path, title, content)
 
 
 def app_status(ai_helper: object | None = None) -> dict[str, object]:

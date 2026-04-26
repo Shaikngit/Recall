@@ -1,0 +1,117 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "14910757780977098271"
+    }
+  },
+  "parameters": {
+    "searchPrivateDnsZoneName": {
+      "type": "string"
+    },
+    "searchPrivateDnsZoneVnetLinkName": {
+      "type": "string"
+    },
+    "searchPrivateEndpointName": {
+      "type": "string"
+    },
+    "searchPrivateEndpointConnectionName": {
+      "type": "string"
+    },
+    "virtualNetworkName": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "searchResourceId": {
+      "type": "string"
+    },
+    "subnetId": {
+      "type": "string"
+    }
+  },
+  "variables": {
+    "searchServiceName": "[split(parameters('searchResourceId'), '/')[8]]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/privateDnsZones",
+      "apiVersion": "2020-06-01",
+      "name": "[parameters('searchPrivateDnsZoneName')]",
+      "location": "global"
+    },
+    {
+      "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+      "apiVersion": "2024-06-01",
+      "name": "[format('{0}/{1}', parameters('searchPrivateDnsZoneName'), parameters('searchPrivateDnsZoneVnetLinkName'))]",
+      "location": "global",
+      "properties": {
+        "registrationEnabled": false,
+        "resolutionPolicy": "Default",
+        "virtualNetwork": {
+          "id": "[resourceId('Microsoft.Network/virtualNetworks', parameters('virtualNetworkName'))]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', parameters('searchPrivateDnsZoneName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/privateEndpoints",
+      "apiVersion": "2024-05-01",
+      "name": "[parameters('searchPrivateEndpointName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "privateLinkServiceConnections": [
+          {
+            "name": "[parameters('searchPrivateEndpointConnectionName')]",
+            "properties": {
+              "groupIds": [
+                "searchService"
+              ],
+              "privateLinkServiceId": "[parameters('searchResourceId')]"
+            }
+          }
+        ],
+        "subnet": {
+          "id": "[parameters('subnetId')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/privateDnsZones/A",
+      "apiVersion": "2024-06-01",
+      "name": "[format('{0}/{1}', parameters('searchPrivateDnsZoneName'), variables('searchServiceName'))]",
+      "properties": {
+        "ttl": 3600,
+        "aRecords": [
+          {
+            "ipv4Address": "[reference(resourceId('Microsoft.Network/privateEndpoints', parameters('searchPrivateEndpointName')), '2024-05-01').customDnsConfigs[0].ipAddresses[0]]"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/privateDnsZones', parameters('searchPrivateDnsZoneName'))]",
+        "[resourceId('Microsoft.Network/privateEndpoints', parameters('searchPrivateEndpointName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "searchPrivateEndpointId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/privateEndpoints', parameters('searchPrivateEndpointName'))]"
+    },
+    "searchPrivateEndpointName": {
+      "type": "string",
+      "value": "[parameters('searchPrivateEndpointName')]"
+    },
+    "searchPrivateIp": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/privateEndpoints', parameters('searchPrivateEndpointName')), '2024-05-01').customDnsConfigs[0].ipAddresses[0]]"
+    }
+  }
+}

@@ -158,10 +158,14 @@ class AzureSearchIndexManager:
                 "snippet": snippet,
                 "score": score,
             }
+            logger.debug(f"Uploading document: id={doc_id}, relative_path={relative_path}, title={title[:30]}")
             self._search_client.upload_documents(documents=[document])
+            logger.debug(f"Successfully uploaded document {doc_id}")
             return True
         except Exception as e:
             logger.warning(f"Failed to index document {doc_id}: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
             return False
 
     def index_documents(self, documents: list[dict]) -> bool:
@@ -192,9 +196,15 @@ class AzureSearchIndexManager:
                 top=top,
                 include_total_count=True,
             )
-            return list(results)
+            results_list = list(results)
+            logger.debug(f"Search query: '{query}' returned {len(results_list)} results")
+            for i, result in enumerate(results_list):
+                logger.debug(f"  Result {i}: relative_path={result.get('relative_path')}, @search.score={result.get('@search.score')}, score={result.get('score')}")
+            return results_list
         except Exception as e:
             logger.warning(f"Search failed: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
             return None
 
     def is_available(self) -> bool:
