@@ -155,12 +155,40 @@ param openaiPrivateDnsZoneVnetLinkName string = 'mykb-openai-dns-link'
 @description('Private link service connection name for the OpenAI private endpoint.')
 param openaiPrivateEndpointConnectionName string = ''
 
+@description('Enable Azure AI Search private networking.')
+param enableSearchPrivateNetworking bool = true
+
+@description('CIDR prefix for the Azure AI Search private endpoint subnet.')
+param searchPrivateEndpointSubnetPrefix string = '10.0.4.0/24'
+
+@description('Private DNS zone used for Azure AI Search private endpoints.')
+param searchPrivateDnsZoneName string = 'privatelink.search.windows.net'
+
+@description('Optional private endpoint name for Azure AI Search. Leave blank to derive a name.')
+param searchPrivateEndpointName string = ''
+
+@description('Private DNS zone config name attached to the Azure AI Search private endpoint DNS zone group.')
+param searchPrivateDnsZoneConfigName string = 'search'
+
+@description('Virtual network link name for the Azure AI Search private DNS zone.')
+param searchPrivateDnsZoneVnetLinkName string = 'mykb-search-dns-link'
+
+@description('Private link service connection name for the Azure AI Search private endpoint.')
+param searchPrivateEndpointConnectionName string = ''
+
+@description('Resource ID of the Azure AI Search service.')
+param searchResourceId string = ''
+
+@description('API key for Azure AI Search.')
+param searchApiKey string = ''
+
 var normalizedEnvironmentName = toLower(replace(environmentName, '-', ''))
 var uniqueSuffix = take(uniqueString(subscription().subscriptionId, resourceGroup().id, environmentName), 6)
 var createNewOpenAI = openAIMode == 'new'
 var useBlobContent = enableBlobContent
 var useBlobPrivateNetworking = enableBlobPrivateNetworking
 var useOpenAIPrivateNetworking = enableOpenAIPrivateNetworking
+var useSearchPrivateNetworking = enableSearchPrivateNetworking && !empty(searchResourceId)
 var useExistingAppServicePlan = !empty(existingAppServicePlanName)
 var useExistingWebApp = !empty(existingWebAppName)
 
@@ -169,14 +197,17 @@ var webAppName = useExistingWebApp ? existingWebAppName : take('app-${normalized
 var derivedOpenAIAccountName = take('oai${normalizedEnvironmentName}${uniqueSuffix}', 64)
 var derivedBlobPrivateEndpointName = take('pe-${normalizedEnvironmentName}-blob', 80)
 var derivedOpenAIPrivateEndpointName = take('pe-${normalizedEnvironmentName}-openai', 80)
+var derivedSearchPrivateEndpointName = take('pe-${normalizedEnvironmentName}-search', 80)
 var effectiveBlobPrivateEndpointName = empty(blobPrivateEndpointName) ? derivedBlobPrivateEndpointName : blobPrivateEndpointName
 var effectiveBlobPrivateEndpointConnectionName = empty(blobPrivateEndpointConnectionName) ? '${effectiveBlobPrivateEndpointName}-blob' : blobPrivateEndpointConnectionName
 var effectiveOpenAIPrivateEndpointName = empty(openaiPrivateEndpointName) ? derivedOpenAIPrivateEndpointName : openaiPrivateEndpointName
 var effectiveOpenAIPrivateEndpointConnectionName = empty(openaiPrivateEndpointConnectionName) ? '${effectiveOpenAIPrivateEndpointName}-openai' : openaiPrivateEndpointConnectionName
+var effectiveSearchPrivateEndpointName = empty(searchPrivateEndpointName) ? derivedSearchPrivateEndpointName : searchPrivateEndpointName
+var effectiveSearchPrivateEndpointConnectionName = empty(searchPrivateEndpointConnectionName) ? '${effectiveSearchPrivateEndpointName}-search' : searchPrivateEndpointConnectionName
 var blobAccountUrl = 'https://${blobStorageAccountName}.blob.${environment().suffixes.storage}'
 var effectiveOpenAIAccountName = createNewOpenAI
   ? (empty(openAINewAccountName) ? derivedOpenAIAccountName : openAINewAccountName)
-  : split(openAIResourceId, '/')[8]
+  : (empty(openAIResourceId) ? 'oairecalltxudrn' : split(openAIResourceId, '/')[8])
 var effectiveOpenAIResourceGroupName = createNewOpenAI ? resourceGroup().name : split(openAIResourceId, '/')[4]
 var openAIRoleDefinitionId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
@@ -203,15 +234,23 @@ var blobContentAppSettings = useBlobContent ? {
 var blobBootstrapAppSettings = useBlobContent && !empty(blobBootstrapRoot) ? {
   MYKB_BLOB_BOOTSTRAP_ROOT: blobBootstrapRoot
 } : {}
-var blobNetworkingAppSettings = useBlobPrivateNetworking || useOpenAIPrivateNetworking ? {
+var blobNetworkingAppSettings = useBlobPrivateNetworking || useOpenAIPrivateNetworking || useSearchPrivateNetworking ? {
   WEBSITE_DNS_SERVER: '168.63.129.16'
   WEBSITE_VNET_ROUTE_ALL: '1'
 } : {}
-var existingOpenAIAppSettings = union(commonAppSettings, filesystemContentAppSettings, blobContentAppSettings, blobBootstrapAppSettings, blobNetworkingAppSettings, {
+var searchEndpoint = !empty(searchResourceId) ? 'https://${split(searchResourceId, '/')[8]}.search.windows.net' : ''
+var searchAppSettings = !empty(searchResourceId) ? union(
+  {
+    AZURE_SEARCH_ENDPOINT: searchEndpoint
+    AZURE_SEARCH_INDEX_NAME: 'mykb-notes'
+  },
+  !empty(searchApiKey) ? { AZURE_SEARCH_API_KEY: searchApiKey } : {}
+) : {}
+var existingOpenAIAppSettings = union(commonAppSettings, filesystemContentAppSettings, blobContentAppSettings, blobBootstrapAppSettings, blobNetworkingAppSettings, searchAppSettings, {
   AZURE_OPENAI_DEPLOYMENT: openAIDeploymentName
   AZURE_OPENAI_ENDPOINT: reference(openAIResourceId, '2025-06-01').endpoint
 })
-var newOpenAIAppSettings = union(commonAppSettings, filesystemContentAppSettings, blobContentAppSettings, blobBootstrapAppSettings, blobNetworkingAppSettings, {
+var newOpenAIAppSettings = union(commonAppSettings, filesystemContentAppSettings, blobContentAppSettings, blobBootstrapAppSettings, blobNetworkingAppSettings, searchAppSettings, {
   AZURE_OPENAI_DEPLOYMENT: openAIDeploymentName
   #disable-next-line use-resource-symbol-reference
   AZURE_OPENAI_ENDPOINT: reference(newOpenAI.id, '2025-06-01').endpoint
@@ -257,6 +296,16 @@ module openaiNetworkSubnet 'modules/openai-network-subnet.bicep' = if (useOpenAI
     virtualNetworkName: existingVirtualNetworkName
     subnetName: openaiPrivateEndpointSubnetName
     subnetPrefix: openaiPrivateEndpointSubnetPrefix
+  }
+}
+
+module searchNetworkSubnet 'modules/search-network-subnet.bicep' = if (useSearchPrivateNetworking) {
+  name: 'search-network-subnet'
+  scope: resourceGroup(existingVirtualNetworkResourceGroupName)
+  params: {
+    virtualNetworkName: existingVirtualNetworkName
+    subnetName: 'search-private-endpoint-subnet'
+    subnetPrefix: searchPrivateEndpointSubnetPrefix
   }
 }
 
@@ -439,6 +488,21 @@ module openaiPrivateEndpointModule 'modules/openai-private-endpoint.bicep' = if 
     location: existingVirtualNetwork!.location
     openaiResourceId: createNewOpenAI ? newOpenAI.id : openAIResourceId
     subnetId: openaiNetworkSubnet!.outputs.subnetId
+  }
+}
+
+module searchPrivateEndpointModule 'modules/search-private-endpoint.bicep' = if (useSearchPrivateNetworking) {
+  name: 'search-private-endpoint'
+  scope: resourceGroup(existingVirtualNetworkResourceGroupName)
+  params: {
+    searchPrivateDnsZoneName: searchPrivateDnsZoneName
+    searchPrivateDnsZoneVnetLinkName: searchPrivateDnsZoneVnetLinkName
+    searchPrivateEndpointName: effectiveSearchPrivateEndpointName
+    searchPrivateEndpointConnectionName: effectiveSearchPrivateEndpointConnectionName
+    virtualNetworkName: existingVirtualNetworkName
+    location: existingVirtualNetwork!.location
+    searchResourceId: searchResourceId
+    subnetId: searchNetworkSubnet!.outputs.subnetId
   }
 }
 

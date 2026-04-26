@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -11,12 +12,17 @@ from typing import Iterable
 from uuid import uuid4
 
 from kb_app.blob_content import BlobContentStore
+from kb_app.search import AzureSearchIndexManager, AzureSearchSettings
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_AZURE_FILES_CONTENT_ROOT = Path('/mounts/mykb-content')
 CONTENT_STORE = BlobContentStore.from_environment(APP_ROOT)
 logger = logging.getLogger(__name__)
+
+# Initialize Azure Search index manager
+SEARCH_SETTINGS = AzureSearchSettings.from_environment()
+SEARCH_INDEX_MANAGER = AzureSearchIndexManager(SEARCH_SETTINGS)
 
 
 def resolve_content_root() -> Path:
@@ -178,6 +184,9 @@ def save_quick_tip(raw_note: str) -> Path:
     ]
     destination_path.write_text("\n".join(lines), encoding="utf-8")
     sync_content_write(destination_path)
+    
+    # Index the note in Azure Search
+    index_note_in_search(destination_path, title, "\n".join(lines))
     return destination_path
 
 
@@ -433,6 +442,11 @@ def write_kb_note_from_capture(
     else:
         destination_path.write_text(body, encoding="utf-8")
     sync_content_write(destination_path)
+    
+    # Index the note in Azure Search
+    title = draft.get("title", "Untitled")
+    content = destination_path.read_text(encoding="utf-8")
+    index_note_in_search(destination_path, title, content)
 
 
 def save_detailed_capture(
@@ -635,7 +649,38 @@ def import_content_library(relative_paths: list[str] | None = None) -> dict[str,
 
 
 def search_notes(query: str, search_root: Path | None = None) -> list[SearchResult]:
+    """Search notes using Azure AI Search if available, otherwise use local search."""
     initialize_content_root()
+    
+    # Try Azure Search first if available and query is not empty
+    if SEARCH_INDEX_MANAGER.is_available() and query.strip():
+        azure_results = SEARCH_INDEX_MANAGER.search(query, top=12)
+        if azure_results is not None:
+            results: list[SearchResult] = []
+            for result in azure_results:
+                try:
+                    note_path = CONTENT_ROOT / result["relative_path"]
+                    results.append(
+                        SearchResult(
+                            path=note_path,
+                            title=result.get("title", "Untitled"),
+                            score=int(result.get("score", 0) * 100),
+                            snippet=result.get("snippet", ""),
+                            content=result.get("content", ""),
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Error processing search result: {e}")
+                    continue
+            if results:
+                return results
+    
+    # Fallback to local file-based search
+    return _search_notes_local(query, search_root)
+
+
+def _search_notes_local(query: str, search_root: Path | None = None) -> list[SearchResult]:
+    """Local file-based search implementation (fallback)."""
     terms = tokenize(query)
     normalized_query = normalize_search_text(query)
 
@@ -677,6 +722,98 @@ def search_notes(query: str, search_root: Path | None = None) -> list[SearchResu
         )
 
     return sorted(results, key=lambda item: (item.score, item.title.lower()), reverse=True)
+
+
+def index_note_in_search(note_path: Path, title: str, content: str) -> None:
+    """Index a note document in Azure Search if available."""
+    if not SEARCH_INDEX_MANAGER.is_available():
+        return
+
+    try:
+        relative_path = relative_note_path(note_path)
+        file_path_str = str(note_path).replace("\\", "/")
+        doc_id = hashlib.md5(file_path_str.encode()).hexdigest()[:32]
+        _, snippet = read_title_and_snippet(note_path)
+
+        SEARCH_INDEX_MANAGER.index_document(
+            doc_id=doc_id,
+            title=title,
+            content=content,
+            relative_path=relative_path,
+            snippet=snippet,
+            score=1.0,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to index note {note_path}: {e}")
+
+
+def backfill_search_index(batch_size: int = 100) -> dict[str, int | bool]:
+    """Backfill all existing notes to Azure Search and return summary stats."""
+    initialize_content_root()
+
+    if batch_size <= 0:
+        raise ValueError("batch_size must be greater than zero")
+
+    if not SEARCH_SETTINGS.is_configured:
+        return {
+            "configured": False,
+            "available": False,
+            "scanned": 0,
+            "prepared": 0,
+            "uploaded": 0,
+            "failedBatches": 0,
+        }
+
+    if not SEARCH_INDEX_MANAGER.is_available():
+        return {
+            "configured": True,
+            "available": False,
+            "scanned": 0,
+            "prepared": 0,
+            "uploaded": 0,
+            "failedBatches": 0,
+        }
+
+    documents: list[dict[str, object]] = []
+    scanned = 0
+    for note_file in iter_note_files():
+        scanned += 1
+        try:
+            title, snippet = read_title_and_snippet(note_file)
+            # Create a hash-based ID instead of using the full path
+            file_path_str = str(note_file).replace("\\", "/")
+            doc_id = hashlib.md5(file_path_str.encode()).hexdigest()[:32]
+            documents.append(
+                {
+                    "id": doc_id,
+                    "title": title,
+                    "content": note_file.read_text(encoding="utf-8", errors="ignore"),
+                    "relative_path": relative_note_path(note_file),
+                    "snippet": snippet,
+                    "score": 1.0,
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Skipping note during backfill {note_file}: {e}")
+
+    uploaded = 0
+    failed_batches = 0
+
+    for start in range(0, len(documents), batch_size):
+        batch = documents[start : start + batch_size]
+        if SEARCH_INDEX_MANAGER.index_documents(batch):
+            uploaded += len(batch)
+        else:
+            failed_batches += 1
+
+    return {
+        "configured": True,
+        "available": True,
+        "scanned": scanned,
+        "prepared": len(documents),
+        "uploaded": uploaded,
+        "failedBatches": failed_batches,
+    }
 
 
 def tokenize(text: str) -> list[str]:

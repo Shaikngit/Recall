@@ -8,6 +8,7 @@ from kb_app.ai import AIHelper, AISettings, AISettingsStore
 from kb_app.core import (
     app_status,
     append_to_daily_inbox,
+    backfill_search_index,
     build_capture_clarification,
     build_fallback_answer,
     dump_results_for_prompt,
@@ -115,6 +116,30 @@ def create_app() -> Flask:
         if not has_valid_admin_token():
             return jsonify({"error": "Admin token required."}), 403
         return jsonify(get_storage_diagnostics())
+
+    @app.post("/api/search/backfill")
+    def search_backfill() -> object:
+        expected_token = admin_token()
+        if not expected_token:
+            abort(404)
+        if not has_valid_admin_token():
+            return jsonify({"error": "Admin token required."}), 403
+
+        payload = request.get_json(silent=True) or {}
+        raw_batch_size = payload.get("batchSize", 100)
+
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            return jsonify({"error": "batchSize must be an integer."}), 400
+
+        try:
+            result = backfill_search_index(batch_size=batch_size)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
+        status_code = 200 if result.get("failedBatches", 0) == 0 else 207
+        return jsonify(result), status_code
 
     @app.post("/api/content/import")
     def import_content() -> object:
